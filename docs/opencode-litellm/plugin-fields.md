@@ -9,8 +9,8 @@ The `opencode-litellm` plugin auto-discovers models from a LiteLLM proxy and mak
 - `GET /v1/model/info` - (Not used by plugin) Returns detailed model metadata including costs, context limits, capabilities
 
 **LiteLLM Model Hub:**
-- `GET /public/model_hub` - Returns list of public model groups (requires API key)
-- `GET /public/model_hub/info` - Returns metadata (docs title, version, links)
+- `GET /public/model_hub` - Returns list of public model groups with metadata
+- `GET /public/model_hub/info` - Returns hub metadata (docs title, version, useful links)
 
 ---
 
@@ -91,8 +91,8 @@ The `opencode-litellm` plugin auto-discovers models from a LiteLLM proxy and mak
 |----------|----------------|-------------|
 | `GET /v1/models` | ✓ Yes | Returns model list (id, object, created, owned_by) |
 | `GET /v1/model/info` | ✗ No | Returns detailed metadata (costs, limits, capabilities) |
-| `GET /public/model_hub` | ✗ No | Public model hub (requires auth) |
-| `GET /public/model_hub/info` | ✗ No | Hub metadata (docs, version, links) |
+| `GET /public/model_hub` | ✗ No | Public model hub with model group metadata |
+| `GET /public/model_hub/info` | ✗ No | Hub metadata (docs title, version, useful links) |
 
 ### 3.2 GET /v1/models Response Fields
 
@@ -105,7 +105,7 @@ The `opencode-litellm` plugin auto-discovers models from a LiteLLM proxy and mak
 
 ### 3.3 GET /v1/model/info Response Fields
 
-The `/v1/model/info` endpoint returns `model_info` for each model, which includes:
+The `/v1/model/info` endpoint returns `model_info` for each model:
 
 | LiteLLM Field | OpenCode Mapping | Description |
 |---------------|------------------|-------------|
@@ -131,26 +131,63 @@ The `/v1/model/info` endpoint returns `model_info` for each model, which include
 | `supports_pdf_input` | `models.*.capabilities.input.pdf` | PDF input |
 | `supports_reasoning` | `models.*.capabilities.reasoning` | Reasoning support |
 
-### 3.4 LiteLLM → OpenCode Field Mapping Table
+### 3.4 GET /public/model_hub Response Fields
+
+The `/public/model_hub` endpoint returns `ModelGroupInfoProxy` with aggregated model group metadata:
+
+| LiteLLM Field | OpenCode Mapping | Description |
+|---------------|------------------|-------------|
+| `model_group` | `models.*.id` | Model group name (e.g., "gpt-4") |
+| `providers` | - | List of provider names supporting this model |
+| `max_input_tokens` | `models.*.limit.context` | Maximum context window |
+| `max_output_tokens` | `models.*.limit.output` | Maximum output tokens |
+| `input_cost_per_token` | `models.*.cost.input` | Cost per input token |
+| `output_cost_per_token` | `models.*.cost.output` | Cost per output token |
+| `input_cost_per_pixel` | - | Image input cost per pixel |
+| `mode` | - | "chat", "embedding", "completion", etc. |
+| `tpm` | - | Tokens per minute limit |
+| `rpm` | - | Requests per minute limit |
+| `supports_parallel_function_calling` | `models.*.capabilities.toolcall` | Parallel tool calling |
+| `supports_vision` | `models.*.capabilities.input.image` | Vision/image input |
+| `supports_web_search` | - | Web search capability |
+| `supports_url_context` | - | URL context capability |
+| `supports_reasoning` | `models.*.capabilities.reasoning` | Reasoning support |
+| `supports_function_calling` | `models.*.capabilities.toolcall` | Tool/function calling |
+| `supported_openai_params` | - | List of supported OpenAI params |
+| `is_public_model_group` | - | Whether model is in public hub |
+| `health_status` | - | "healthy", "unhealthy", "unknown" |
+| `health_response_time` | - | Response time in milliseconds |
+| `health_checked_at` | - | ISO timestamp of last health check |
+
+### 3.5 GET /public/model_hub/info Response Fields
+
+| LiteLLM Field | Description |
+|---------------|-------------|
+| `docs_title` | Title for the model hub documentation |
+| `custom_docs_description` | Custom description for docs |
+| `litellm_version` | LiteLLM proxy version |
+| `useful_links` | Dictionary of helpful links (display name → URL or {url, index}) |
+
+### 3.6 LiteLLM → OpenCode Field Mapping Table
 
 | OpenCode Field | LiteLLM Source Field | Endpoint |
 |----------------|---------------------|----------|
-| `models.*.id` | `key` or `id` | `/v1/models` or `/v1/model/info` |
-| `models.*.name` | `model_name` | `/v1/model/info` |
-| `models.*.limit.output` | `max_tokens` or `max_output_tokens` | `/v1/model/info` |
-| `models.*.limit.context` | `max_input_tokens` | `/v1/model/info` |
-| `models.*.limit.input` | `max_input_tokens` | `/v1/model/info` |
-| `models.*.cost.input` | `input_cost_per_token` | `/v1/model/info` |
-| `models.*.cost.output` | `output_cost_per_token` | `/v1/model/info` |
+| `models.*.id` | `key` or `id` or `model_group` | `/v1/models`, `/v1/model/info`, `/public/model_hub` |
+| `models.*.name` | `model_name` or `model_group` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.limit.output` | `max_tokens`, `max_output_tokens` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.limit.context` | `max_input_tokens` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.limit.input` | `max_input_tokens` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.cost.input` | `input_cost_per_token` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.cost.output` | `output_cost_per_token` | `/v1/model/info`, `/public/model_hub` |
 | `models.*.cost.cache_read` | `cache_read_input_token_cost` | `/v1/model/info` |
 | `models.*.cost.cache_write` | `cache_creation_input_token_cost` | `/v1/model/info` |
 | `models.*.cost.context_over_200k.input` | `input_cost_per_token_above_128k_tokens` | `/v1/model/info` |
 | `models.*.cost.context_over_200k.output` | `output_cost_per_token_above_128k_tokens` | `/v1/model/info` |
-| `models.*.capabilities.input.image` | `supports_vision` | `/v1/model/info` |
+| `models.*.capabilities.input.image` | `supports_vision` | `/v1/model/info`, `/public/model_hub` |
 | `models.*.capabilities.input.audio` | `supports_audio_input` | `/v1/model/info` |
 | `models.*.capabilities.input.pdf` | `supports_pdf_input` | `/v1/model/info` |
-| `models.*.capabilities.toolcall` | `supports_function_calling` | `/v1/model/info` |
-| `models.*.capabilities.reasoning` | `supports_reasoning` | `/v1/model/info` |
+| `models.*.capabilities.toolcall` | `supports_function_calling`, `supports_parallel_function_calling` | `/v1/model/info`, `/public/model_hub` |
+| `models.*.capabilities.reasoning` | `supports_reasoning` | `/v1/model/info`, `/public/model_hub` |
 
 ---
 
@@ -271,6 +308,37 @@ models?: {
 }
 ```
 
+### LiteLLM ModelGroupInfo Type
+Source: `litellm/types/router.py`
+
+```python
+class ModelGroupInfo(BaseModel):
+    model_group: str
+    providers: List[str]
+    max_input_tokens: Optional[float] = None
+    max_output_tokens: Optional[float] = None
+    input_cost_per_token: Optional[float] = None
+    output_cost_per_token: Optional[float] = None
+    input_cost_per_pixel: Optional[float] = None
+    mode: Optional[Literal["chat", "embedding", "completion", "image_generation",
+                           "audio_transcription", "rerank", "moderations"]] = "chat"
+    tpm: Optional[int] = None
+    rpm: Optional[int] = None
+    supports_parallel_function_calling: bool = False
+    supports_vision: bool = False
+    supports_web_search: bool = False
+    supports_url_context: bool = False
+    supports_reasoning: bool = False
+    supports_function_calling: bool = False
+    supported_openai_params: Optional[List[str]] = []
+
+class ModelGroupInfoProxy(ModelGroupInfo):
+    is_public_model_group: bool = False
+    health_status: Optional[str] = None
+    health_response_time: Optional[float] = None
+    health_checked_at: Optional[str] = None
+```
+
 ---
 
 ## 5. Plugin Hooks Reference
@@ -301,6 +369,40 @@ Injects `litellm_session_id` via `providerOptions.litellm` for LiteLLM admin UI 
 
 ---
 
+## 7. Recommended LiteLLM Endpoints for Full Field Coverage
+
+Based on available LiteLLM endpoints and OpenCode model fields, here's the recommended approach:
+
+### Best Option: `/v1/model/info`
+- Provides comprehensive model metadata including costs, limits, capabilities
+- Use `GET /v1/model/info?model_info_fields=key,mode,max_tokens,...` (LiteLLM v1.74.3+)
+- Single request per proxy startup
+
+### Alternative: `/public/model_hub`
+- Aggregated data per model group
+- Includes health check status
+- Less granular than `/v1/model/info` but public access (no auth required in some configs)
+
+### Recommended Data Sources by OpenCode Field
+
+| OpenCode Field | Recommended Source | LiteLLM Field |
+|----------------|-------------------|---------------|
+| `models.*.id` | `/v1/model/info` | `key` |
+| `models.*.name` | `/v1/model/info` | `model_name` |
+| `models.*.cost.input` | `/v1/model/info` or `/public/model_hub` | `input_cost_per_token` |
+| `models.*.cost.output` | `/v1/model/info` or `/public/model_hub` | `output_cost_per_token` |
+| `models.*.cost.cache_read` | `/v1/model/info` | `cache_read_input_token_cost` |
+| `models.*.cost.cache_write` | `/v1/model/info` | `cache_creation_input_token_cost` |
+| `models.*.limit.context` | `/v1/model/info` or `/public/model_hub` | `max_input_tokens` |
+| `models.*.limit.output` | `/v1/model/info` or `/public/model_hub` | `max_output_tokens` or `max_tokens` |
+| `models.*.capabilities.input.image` | `/v1/model/info` or `/public/model_hub` | `supports_vision` |
+| `models.*.capabilities.toolcall` | `/v1/model/info` or `/public/model_hub` | `supports_function_calling` |
+| `models.*.capabilities.reasoning` | `/v1/model/info` or `/public/model_hub` | `supports_reasoning` |
+| `models.*.capabilities.input.audio` | `/v1/model/info` | `supports_audio_input` |
+| `models.*.capabilities.input.pdf` | `/v1/model/info` | `supports_pdf_input` |
+
+---
+
 ## Summary: Plugin vs Full Field Coverage
 
 | Category | Fields Set | Fields Missing | Coverage |
@@ -313,4 +415,6 @@ The plugin only extracts `id` and `name` from LiteLLM. To achieve full field cov
 
 ---
 
-*Documentation generated for opencode-litellm plugin analysis. LiteLLM API reference: https://docs.litellm.ai/docs/proxy/model_management*
+*Documentation generated for opencode-litellm plugin analysis.*
+*LiteLLM API reference: https://docs.litellm.ai/docs/proxy/model_management*
+*LiteLLM Model Hub: https://docs.litellm.ai/docs/proxy/ai_hub*
