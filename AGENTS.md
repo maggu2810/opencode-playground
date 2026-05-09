@@ -19,3 +19,6 @@ Read @docs/agents-file-conventions.md
 
 When exploring opencode internals (SDK types, plugin APIs, provider system, TUI components):
 Read @repos/opencode/AGENTS.md
+
+When analyzing server plugin field coverage (provider/model fields, LiteLLM API mapping):
+Read @docs/opencode-litellm/plugin-fields.md
