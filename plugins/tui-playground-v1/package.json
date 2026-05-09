@@ -1,0 +1,14 @@
+{
+  "name": "tui-playground-v1",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "peerDependencies": {
+    "@opentui/core": ">=0.2.6",
+    "@opentui/keymap": ">=0.2.6",
+    "@opentui/solid": ">=0.2.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
