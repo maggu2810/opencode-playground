@@ -1,0 +1,4 @@
+[submodule "repos/opencode"]
+	path = repos/opencode
+	url = https://github.com/anomalyco/opencode.git
+	branch = dev
