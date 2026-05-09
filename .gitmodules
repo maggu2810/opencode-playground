@@ -2,3 +2,6 @@
 	path = repos/opencode
 	url = https://github.com/anomalyco/opencode.git
 	branch = dev
+[submodule "repos/opencode-litellm"]
+	path = repos/opencode-litellm
+	url = https://github.com/BlakeHastings/opencode-litellm.git
