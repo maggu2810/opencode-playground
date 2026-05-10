@@ -275,7 +275,7 @@ def map_cost(hub: dict[str, Any], info: dict[str, Any]) -> dict[str, Any] | None
 
     # Extended context cost tier.
     # LiteLLM uses "above_128k" in /v1/model/info and "above_200k" in
-    # /public/model_hub (KION-specific). Check both field names.
+    # /public/model_hub. Check both field names.
     input_over = _get_first(
         (info, "input_cost_per_token_above_128k_tokens"),
         (hub, "input_cost_per_token_above_200k_tokens"),
@@ -397,13 +397,40 @@ def _dumps_value(value: Any) -> str:
     )
 
 
-def _render_model(model: dict[str, Any], indent: str, trailing_comma: bool) -> list[str]:
-    """Render one ModelConfig dict as indented JSONC lines."""
-    model_id = model["id"]
-    # Serialize the whole dict in one shot (floats already handled).
-    value_json = _dumps_value({k: v for k, v in model.items()})
-    trailer = "," if trailing_comma else ""
-    return [f'{indent}"{model_id}": {value_json}{trailer}']
+def _build_blacklist(
+    categories: dict[str, str],
+    enabled_categories: set[str],
+) -> list[tuple[str, str]]:
+    """Return (model_id, category) pairs for the provider blacklist.
+
+    Only models whose category is in NON_CHAT_CATEGORIES and is NOT in
+    enabled_categories are included. Entries are grouped by category (in a
+    stable order) so that the JSONC comment per group is meaningful, and
+    sorted by model ID within each group.
+    """
+    # Stable category ordering for readable output.
+    category_order = [
+        "embedding",
+        "audio_speech",
+        "transcription",
+        "image_generation",
+        "video_generation",
+        "ocr",
+        "ranking",
+        "router",
+    ]
+
+    # Group disabled non-chat model IDs by category.
+    by_category: dict[str, list[str]] = {c: [] for c in category_order}
+    for model_id, category in categories.items():
+        if category in NON_CHAT_CATEGORIES and category not in enabled_categories:
+            by_category.setdefault(category, []).append(model_id)
+
+    result: list[tuple[str, str]] = []
+    for category in category_order:
+        for model_id in sorted(by_category.get(category, [])):
+            result.append((model_id, category))
+    return result
 
 
 def render_jsonc(
@@ -416,11 +443,28 @@ def render_jsonc(
 ) -> str:
     """Render the full opencode.jsonc string for a single provider.
 
-    Non-chat models whose category is not in enabled_categories are written
-    as JSONC comment blocks (two-line style):
-        // <category label> model — not typically used by opencode
-        // "<id>": {...},
+    All models (chat and non-chat) are written as active entries in the
+    "models" block so their metadata (cost, limits, capabilities) is
+    preserved and visible.
+
+    Non-chat models whose category is not in enabled_categories are added to
+    the provider-level "blacklist" array, which causes OpenCode to hide them
+    from the model picker while keeping the data intact.  Each group of
+    blacklisted models is preceded by a JSONC comment explaining why:
+
+        "blacklist": [
+          // embedding model — not used by opencode
+          "text-embedding-ada-002",
+          "text-embedding-3-large",
+          // image generation model — not used by opencode
+          "dall-e-3"
+        ],
+
+    When --enable-all is passed, enabled_categories == NON_CHAT_CATEGORIES
+    and the blacklist is omitted entirely.
     """
+    blacklist = _build_blacklist(categories, enabled_categories)
+
     lines: list[str] = []
     lines.append("{")
     lines.append('  "$schema": "https://opencode.ai/config.json",')
@@ -432,29 +476,32 @@ def render_jsonc(
     lines.append(f'        "baseURL": "{base_url.rstrip("/")}/v1",')
     lines.append('        "litellmProxy": true')
     lines.append("      },")
-    lines.append('      "models": {')
 
+    # Blacklist block — omitted when every non-chat category is enabled.
+    if blacklist:
+        lines.append('      "blacklist": [')
+        prev_category: str | None = None
+        for idx, (model_id, category) in enumerate(blacklist):
+            is_last = idx == len(blacklist) - 1
+            trailer = "" if is_last else ","
+            if category != prev_category:
+                label = _CATEGORY_LABEL.get(category, category)
+                lines.append(
+                    f"        // {label} model — not used by opencode"
+                )
+                prev_category = category
+            lines.append(f'        "{model_id}"{trailer}')
+        lines.append("      ],")
+
+    # Models block — all models, always active.
+    lines.append('      "models": {')
     model_ids = list(models_by_id.keys())
     for idx, model_id in enumerate(model_ids):
         model = models_by_id[model_id]
-        category = categories[model_id]
         is_last = idx == len(model_ids) - 1
-        # Last active model must not have a trailing comma; commented models
-        # always get a comma in the comment text so the uncommented block
-        # stays valid JSON.
-        trailing_comma = not is_last
-
-        if category in NON_CHAT_CATEGORIES and category not in enabled_categories:
-            label = _CATEGORY_LABEL.get(category, category)
-            lines.append(
-                f"        // {label} model — not typically used by opencode"
-            )
-            value_json = _dumps_value({k: v for k, v in model.items()})
-            lines.append(f'        // "{model_id}": {value_json},')
-        else:
-            value_json = _dumps_value({k: v for k, v in model.items()})
-            trailer = "," if trailing_comma else ""
-            lines.append(f'        "{model_id}": {value_json}{trailer}')
+        trailer = "" if is_last else ","
+        value_json = _dumps_value({k: v for k, v in model.items()})
+        lines.append(f'        "{model_id}": {value_json}{trailer}')
 
     lines.append("      }")
     lines.append("    }")

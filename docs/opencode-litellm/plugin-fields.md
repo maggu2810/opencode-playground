@@ -1,420 +1,326 @@
-# opencode-litellm Plugin Fields Documentation
+# OpenCode × LiteLLM — Field Coverage Reference
 
-## Overview
+Verified against the OpenCode source tree (`repos/opencode/`, branch `dev`).
+Three implementations are compared:
 
-The `opencode-litellm` plugin auto-discovers models from a LiteLLM proxy and makes them available in OpenCode without manual configuration.
-
-**API Endpoints Used:**
-- `GET /v1/models` - Lists available model IDs
-- `GET /v1/model/info` - (Not used by plugin) Returns detailed model metadata including costs, context limits, capabilities
-
-**LiteLLM Model Hub:**
-- `GET /public/model_hub` - Returns list of public model groups with metadata
-- `GET /public/model_hub/info` - Returns hub metadata (docs title, version, useful links)
+| Label | What it is |
+|---|---|
+| **BlakeHastings** | `repos/opencode-litellm@BlakeHastings/src/index.ts` — v1 plugin API, `config` + `auth` + `chat.params` hooks |
+| **yuseferi** | `repos/opencode-litellm@yuseferi/src/plugin/` — v2 plugin API, `provider.models` hook |
+| **playground-gen** | `tools/config-generator/src/generate.py` — generates static `opencode.jsonc` for one configurable provider |
 
 ---
 
-## 1. Provider Fields Comparison
+## 1. Provider-level fields
 
-| Field Path | OpenCode Uses For | Plugin Sets | Value |
-|------------|-------------------|-------------|-------|
-| `provider.litellm` | Provider key | ✓ | Dynamic key "litellm" |
-| `npm` | AI SDK package selection | ✓ | `"@ai-sdk/openai-compatible"` |
-| `name` | Display name in UI (/connect) | ✓ | `"LiteLLM"` |
-| `options.baseURL` | API endpoint for requests | ✓ | `${rootURL}/v1` |
-| `options.apiKey` | Authentication header | ✓ (if stored) | From auth.json |
-| `options.enterpriseUrl` | Enterprise OAuth flow | ✗ | - |
-| `options.setCacheKey` | Enable request caching | ✗ | - |
-| `options.timeout` | Request timeout (default: 300000ms) | ✗ | - |
-| `options.chunkTimeout` | Chunked response timeout | ✗ | - |
-| `options.*` | Provider-specific options | ✗ | - |
-| `env` | Environment variable names to check for API key | ✗ | - |
-| `whitelist` | Allowed model IDs filter | ✗ | - |
-| `blacklist` | Disallowed model IDs filter | ✗ | - |
-| `models` | Available models map | ✓ (partial) | Record with id/name only |
+Source of truth: `packages/opencode/src/config/provider.ts` (`Info` schema, L71–108).
 
-### Provider Summary
+| Field | OpenCode uses it for | BlakeHastings | yuseferi | playground-gen |
+|---|---|---|---|---|
+| `npm` | Selects the AI SDK adapter package | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` (chat) / `"@ai-sdk/openai"` (responses) | `"@ai-sdk/openai-compatible"` |
+| `name` | Display name in UI | `"LiteLLM"` | not set¹ | configurable via `--provider-name` |
+| `options.baseURL` | API endpoint for all requests | `${rootURL}/v1` | read from provider config or env | `${base_url}/v1` |
+| `options.apiKey` | Bearer token sent with every request | injected at runtime from auth store | read from provider config or `LITELLM_API_KEY` env | **omitted** — user sets it |
+| `options.litellmProxy` | Enables stub-tool injection for LiteLLM compatibility (`llm.ts` L203–206) | **not set** | **not set** | `true` |
+| `options.timeout` | Request timeout (default 300 000 ms) | **not set** | **not set** | **not set** |
+| `options.chunkTimeout` | SSE chunk timeout | **not set** | **not set** | **not set** |
+| `options.setCacheKey` | Enable `promptCacheKey` per-session | **not set** | **not set** | **not set** |
+| `options.transport` | yuseferi routing policy (`auto`/`chat`/`responses`) | n/a | read from provider config | n/a |
+| `options.responsesApiModels` | yuseferi explicit allowlist for Responses API | n/a | read from provider config | n/a |
+| `options.chatApiModels` | yuseferi explicit denylist for Responses API | n/a | read from provider config | n/a |
+| `api` | Override API URL entirely | **not set** | **not set** | **not set** |
+| `id` | Provider identifier override | **not set** | **not set** | **not set** |
+| `env` | Env var names OpenCode checks for the API key | **not set** | **not set** | **not set** |
+| `whitelist` | Restrict visible models to a named subset | **not set** | **not set** | **not set** |
+| `blacklist` | Hide specific models from the model picker | **not set** | **not set** | set — non-chat model IDs by default; see §4 |
+| `models` | Per-model config overrides | set (see §2) | set dynamically via `provider.models` hook | set statically in JSONC |
 
-| Status | Count |
-|--------|-------|
-| ✓ Set by plugin | 4 |
-| ✗ Missing from plugin | 9 |
-| Total OpenCode provider fields | 13 |
+¹ yuseferi's `LiteLLMPlugin` and `LiteLLMResponsesPlugin` use the `provider.models` hook — the provider shell (`npm`, `name`, `options.*`) must be declared by the user in their own `opencode.json`. The plugin only populates the `models` map.
 
----
+### LiteLLM detection: `litellmProxy` vs provider-ID heuristic
 
-## 2. Model Fields Comparison
+`llm.ts` (L203–206) treats a request as coming from a LiteLLM proxy when **any** of these is true:
 
-| Field Path | OpenCode Uses For | Plugin Sets | Value |
-|------------|-------------------|-------------|-------|
-| `models.*.id` | Unique model identifier | ✓ | LiteLLM model ID |
-| `models.*.name` | Display name in model picker | ✓ | LiteLLM model ID |
-| `models.*.family` | Model family grouping | ✗ | - |
-| `models.*.release_date` | Release date info | ✗ | - |
-| `models.*.attachment` | File attachment support | ✗ | - |
-| `models.*.reasoning` | Reasoning/thinking support | ✗ | - |
-| `models.*.temperature` | Temperature parameter support | ✗ | - |
-| `models.*.tool_call` | Tool calling support | ✗ | - |
-| `models.*.interleaved` | Interleaved reasoning content | ✗ | - |
-| `models.*.cost.input` | Input cost calculation | ✗ | - |
-| `models.*.cost.output` | Output cost calculation | ✗ | - |
-| `models.*.cost.cache_read` | Cache read cost | ✗ | - |
-| `models.*.cost.cache_write` | Cache write cost | ✗ | - |
-| `models.*.cost.context_over_200k` | Extended context cost | ✗ | - |
-| `models.*.limit.context` | Maximum context window size | ✗ | - |
-| `models.*.limit.input` | Maximum input tokens | ✗ | - |
-| `models.*.limit.output` | Maximum output tokens | ✗ | - |
-| `models.*.modalities.input[]` | Supported input types (text/audio/image/video/pdf) | ✗ | - |
-| `models.*.modalities.output[]` | Supported output types (text/audio/image/video/pdf) | ✗ | - |
-| `models.*.status` | Model availability (alpha/beta/deprecated/active) | ✗ | - |
-| `models.*.options.*` | Provider-specific model options | ✗ | - |
-| `models.*.headers.*` | Custom request headers | ✗ | - |
-| `models.*.provider.npm` | Override AI SDK package | ✗ | - |
-| `models.*.provider.api` | Override API endpoint | ✗ | - |
-| `models.*.variants.*` | Variant-specific configurations | ✗ | - |
-
-### Model Summary
-
-| Status | Count |
-|--------|-------|
-| ✓ Set by plugin | 2 |
-| ✗ Missing from plugin | 23 |
-| Total OpenCode model fields | 25 |
-
----
-
-## 3. LiteLLM API → OpenCode Field Mapping
-
-### 3.1 LiteLLM Endpoints
-
-| Endpoint | Used by Plugin | Description |
-|----------|----------------|-------------|
-| `GET /v1/models` | ✓ Yes | Returns model list (id, object, created, owned_by) |
-| `GET /v1/model/info` | ✗ No | Returns detailed metadata (costs, limits, capabilities) |
-| `GET /public/model_hub` | ✗ No | Public model hub with model group metadata |
-| `GET /public/model_hub/info` | ✗ No | Hub metadata (docs title, version, useful links) |
-
-### 3.2 GET /v1/models Response Fields
-
-| LiteLLM Field | OpenCode Mapping | Plugin Uses |
-|---------------|------------------|-------------|
-| `data[].id` | `models.*.id` | ✓ Yes |
-| `data[].object` | - | ✗ No |
-| `data[].created` | - | ✗ No |
-| `data[].owned_by` | - | ✗ No |
-
-### 3.3 GET /v1/model/info Response Fields
-
-The `/v1/model/info` endpoint returns `model_info` for each model:
-
-| LiteLLM Field | OpenCode Mapping | Description |
-|---------------|------------------|-------------|
-| `model_name` | `models.*.name` | Display name |
-| `key` | `models.*.id` | Model identifier |
-| `max_tokens` | `models.*.limit.output` | Max output tokens |
-| `max_input_tokens` | `models.*.limit.context` | Max context (when input==context) |
-| `max_output_tokens` | `models.*.limit.output` | Max output tokens |
-| `input_cost_per_token` | `models.*.cost.input` | Cost per input token |
-| `output_cost_per_token` | `models.*.cost.output` | Cost per output token |
-| `cache_read_input_token_cost` | `models.*.cost.cache_read` | Cache read cost |
-| `cache_creation_input_token_cost` | `models.*.cost.cache_write` | Cache write cost |
-| `input_cost_per_token_above_128k_tokens` | `models.*.cost.context_over_200k.input` | Extended context input cost |
-| `output_cost_per_token_above_128k_tokens` | `models.*.cost.context_over_200k.output` | Extended context output cost |
-| `litellm_provider` | - | Source provider (informational) |
-| `mode` | - | "chat" or "completion" (informational) |
-| `supports_system_messages` | `models.*.options.supports_system_messages` | System message support |
-| `supports_vision` | `models.*.capabilities.input.image` | Vision/image input |
-| `supports_function_calling` | `models.*.capabilities.toolcall` | Tool calling |
-| `supports_prompt_caching` | - | Cache support indicator |
-| `supports_audio_input` | `models.*.capabilities.input.audio` | Audio input |
-| `supports_audio_output` | `models.*.capabilities.output.audio` | Audio output |
-| `supports_pdf_input` | `models.*.capabilities.input.pdf` | PDF input |
-| `supports_reasoning` | `models.*.capabilities.reasoning` | Reasoning support |
-
-### 3.4 GET /public/model_hub Response Fields
-
-The `/public/model_hub` endpoint returns `ModelGroupInfoProxy` with aggregated model group metadata:
-
-| LiteLLM Field | OpenCode Mapping | Description |
-|---------------|------------------|-------------|
-| `model_group` | `models.*.id` | Model group name (e.g., "gpt-4") |
-| `providers` | - | List of provider names supporting this model |
-| `max_input_tokens` | `models.*.limit.context` | Maximum context window |
-| `max_output_tokens` | `models.*.limit.output` | Maximum output tokens |
-| `input_cost_per_token` | `models.*.cost.input` | Cost per input token |
-| `output_cost_per_token` | `models.*.cost.output` | Cost per output token |
-| `input_cost_per_pixel` | - | Image input cost per pixel |
-| `mode` | - | "chat", "embedding", "completion", etc. |
-| `tpm` | - | Tokens per minute limit |
-| `rpm` | - | Requests per minute limit |
-| `supports_parallel_function_calling` | `models.*.capabilities.toolcall` | Parallel tool calling |
-| `supports_vision` | `models.*.capabilities.input.image` | Vision/image input |
-| `supports_web_search` | - | Web search capability |
-| `supports_url_context` | - | URL context capability |
-| `supports_reasoning` | `models.*.capabilities.reasoning` | Reasoning support |
-| `supports_function_calling` | `models.*.capabilities.toolcall` | Tool/function calling |
-| `supported_openai_params` | - | List of supported OpenAI params |
-| `is_public_model_group` | - | Whether model is in public hub |
-| `health_status` | - | "healthy", "unhealthy", "unknown" |
-| `health_response_time` | - | Response time in milliseconds |
-| `health_checked_at` | - | ISO timestamp of last health check |
-
-### 3.5 GET /public/model_hub/info Response Fields
-
-| LiteLLM Field | Description |
-|---------------|-------------|
-| `docs_title` | Title for the model hub documentation |
-| `custom_docs_description` | Custom description for docs |
-| `litellm_version` | LiteLLM proxy version |
-| `useful_links` | Dictionary of helpful links (display name → URL or {url, index}) |
-
-### 3.6 LiteLLM → OpenCode Field Mapping Table
-
-| OpenCode Field | LiteLLM Source Field | Endpoint |
-|----------------|---------------------|----------|
-| `models.*.id` | `key` or `id` or `model_group` | `/v1/models`, `/v1/model/info`, `/public/model_hub` |
-| `models.*.name` | `model_name` or `model_group` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.limit.output` | `max_tokens`, `max_output_tokens` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.limit.context` | `max_input_tokens` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.limit.input` | `max_input_tokens` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.cost.input` | `input_cost_per_token` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.cost.output` | `output_cost_per_token` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.cost.cache_read` | `cache_read_input_token_cost` | `/v1/model/info` |
-| `models.*.cost.cache_write` | `cache_creation_input_token_cost` | `/v1/model/info` |
-| `models.*.cost.context_over_200k.input` | `input_cost_per_token_above_128k_tokens` | `/v1/model/info` |
-| `models.*.cost.context_over_200k.output` | `output_cost_per_token_above_128k_tokens` | `/v1/model/info` |
-| `models.*.capabilities.input.image` | `supports_vision` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.capabilities.input.audio` | `supports_audio_input` | `/v1/model/info` |
-| `models.*.capabilities.input.pdf` | `supports_pdf_input` | `/v1/model/info` |
-| `models.*.capabilities.toolcall` | `supports_function_calling`, `supports_parallel_function_calling` | `/v1/model/info`, `/public/model_hub` |
-| `models.*.capabilities.reasoning` | `supports_reasoning` | `/v1/model/info`, `/public/model_hub` |
-
----
-
-## 4. SDK Type References
-
-### Provider Type (Runtime)
-Source: `@opencode-ai/sdk` → `packages/sdk/js/src/v2/gen/types.gen.ts`
-
-```typescript
-export type Provider = {
-  id: string                          // Required
-  name: string                        // Required
-  source: "env" | "config" | "custom" | "api"  // Required
-  env: Array<string>                  // Required
-  key?: string                        // Optional
-  options: { [key: string]: unknown } // Required
-  models: { [key: string]: Model }    // Required
-}
+```
+item.options?.["litellmProxy"] === true
+input.model.providerID.toLowerCase().includes("litellm")
+input.model.api.id.toLowerCase().includes("litellm")
 ```
 
-### ProviderConfig (User Config)
-Source: `@opencode-ai/sdk` → `packages/sdk/js/src/v2/gen/types.gen.ts`
+BlakeHastings and yuseferi rely on the `providerID` heuristic (`"litellm"` / `"litellm-responses"`) instead of setting the flag. playground-gen uses the explicit `litellmProxy: true` option, which works with **any** provider key name.
 
-```typescript
-export type ProviderConfig = {
-  api?: string
-  name?: string
-  env?: Array<string>
-  id?: string
-  npm?: string
-  whitelist?: Array<string>
-  blacklist?: Array<string>
-  options?: {
-    apiKey?: string
-    baseURL?: string
-    enterpriseUrl?: string
-    setCacheKey?: boolean
-    timeout?: number | false
-    chunkTimeout?: number
-    [key: string]: unknown
-  }
-  models?: { [key: string]: ModelConfig }
-}
+---
+
+## 2. Model-level fields
+
+Two distinct schemas exist and must not be confused:
+
+| Schema | Location | Used by |
+|---|---|---|
+| **`ModelConfig`** (user config) | `config/provider.ts` `Model` schema (L5–69) | Written into `opencode.jsonc` / injected by `config` hook. OpenCode merges this over the runtime model. |
+| **`ModelsDev.Model`** (runtime / models.dev) | `provider/models.ts` `Model` schema (L27–78) | The full runtime model object. Populated from `models.dev` API, then overridden by `ModelConfig`. |
+| **`Provider.Model`** (V2 plugin return type) | `@opencode-ai/sdk/v2` `Model` type | Returned by `provider.models` hook. This **is** the runtime model — it must be complete. |
+
+The yuseferi plugin builds `Provider.Model` objects directly (see `build-model.ts`). The other two write `ModelConfig` objects into the config file which OpenCode merges on top of models.dev data.
+
+### 2a. `ModelConfig` fields (config file / config hook)
+
+Source: `config/provider.ts` L5–69.
+
+| Field | Runtime effect | BlakeHastings | yuseferi¹ | playground-gen |
+|---|---|---|---|---|
+| `id` | Model identifier sent to the API | **not set** | set to LiteLLM model id | set to `model_group` |
+| `name` | Display name in model picker | set to LiteLLM model id | set via `formatModelName()` | set to `model_group` |
+| `family` | Model family grouping | **not set** | **not set** | **not set** |
+| `release_date` | Used by `transform.ts` for reasoning-effort date gating | **not set** | `""` (hardcoded) | **not set** |
+| `tool_call` | `transform.ts`: controls whether tools are offered | **not set** | set (`supports_function_calling`) | set when truthy |
+| `attachment` | `transform.ts` `unsupportedParts`: gates image/file pass-through | **not set** | set (`supports_vision`) | set when truthy |
+| `reasoning` | `transform.ts` `variants()`: enables reasoning-effort variants; `options()`: enables thinking config | **not set** | `false` (hardcoded) | set when truthy |
+| `temperature` | `llm.ts` L171: gates whether temperature is sent to the API | **not set** | `true` (hardcoded) | `true` always |
+| `interleaved` | `transform.ts` `normalizeMessages()` L306–337: routes reasoning text to provider-specific field | **not set** | **not set** | **not set** |
+| `cost.input` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info |
+| `cost.output` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info |
+| `cost.cache_read` | Cache read cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` |
+| `cost.cache_write` | Cache write cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` |
+| `cost.context_over_200k.input` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) |
+| `cost.context_over_200k.output` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) |
+| `limit.context` | Context window; compaction trigger | **not set** | set (`max_input_tokens ?? 0`) | set from hub or model/info |
+| `limit.input` | Input token limit | **not set** | set (`max_input_tokens`) | set (same as context) |
+| `limit.output` | `transform.ts` `maxOutputTokens()` L1281: caps output tokens per request; `variants()` L858–866: Anthropic thinking budget | **not set** | set (`max_output_tokens ?? 0`) | set from hub or model/info |
+| `modalities.input` | `transform.ts` `unsupportedParts()` L393–428: substitutes error text for unsupported file types | **not set** | **not set**² | set (`text` always; `image`/`audio`/`pdf` from capability flags) |
+| `modalities.output` | (informational) | **not set** | **not set**² | set (`text` always; `audio` from model/info) |
+| `experimental` | (reserved for future use) | **not set** | **not set** | **not set** |
+| `status` | UI badge (alpha/beta/deprecated) | **not set** | **not set** | **not set** |
+| `options` | Per-model provider options bag | **not set** | `{}` (hardcoded) | **not set** |
+| `headers` | Per-model custom HTTP headers | **not set** | `{}` (hardcoded) | **not set** |
+| `variants` | Reasoning-effort variants (low/medium/high/…) | **not set** | **not set** | **not set** |
+| `provider.npm` | Override AI SDK package per model | **not set** | **not set** | **not set** |
+| `provider.api` | Override API URL per model | **not set** | **not set** | **not set** |
+
+¹ yuseferi writes `Provider.Model` (the V2 runtime type) — not `ModelConfig`. The fields listed above are the `Provider.Model` equivalents. yuseferi's `capabilities` sub-object is in the **runtime** shape, not the config-file shape, and OpenCode accepts it because the plugin returns it via the `provider.models` hook directly into the runtime model registry.
+
+² yuseferi uses `capabilities.input` / `capabilities.output` (the V2 runtime struct) instead of the `modalities` config key. Both express the same intent but through different code paths.
+
+### 2b. `Provider.Model` / V2 runtime capabilities (yuseferi only)
+
+`build-model.ts` populates the runtime `capabilities` struct directly:
+
+| Capability field | Source | Value |
+|---|---|---|
+| `capabilities.temperature` | hardcoded | `true` |
+| `capabilities.reasoning` | hardcoded | `false` — **always disabled** regardless of model |
+| `capabilities.attachment` | `supports_vision \|\| type === 'audio'` | boolean |
+| `capabilities.toolcall` | `supports_function_calling` | boolean |
+| `capabilities.input.text` | hardcoded | `true` |
+| `capabilities.input.audio` | `type === 'audio'` (name heuristic) | boolean |
+| `capabilities.input.image` | `supports_vision` | boolean |
+| `capabilities.input.video` | hardcoded | `false` |
+| `capabilities.input.pdf` | hardcoded | `false` — always, no LiteLLM source used |
+| `capabilities.output.text` | `type !== 'image'` | boolean |
+| `capabilities.output.audio` | hardcoded | `false` |
+| `capabilities.output.image` | `type === 'image'` | boolean |
+| `capabilities.output.video` | hardcoded | `false` |
+| `capabilities.output.pdf` | hardcoded | `false` |
+| `capabilities.interleaved` | hardcoded | `false` — **schema-invalid for `ModelConfig`**; valid for V2 runtime type |
+| `cost.input` / `cost.output` | hardcoded | `0` |
+| `cost.cache.read` / `cost.cache.write` | hardcoded | `0` |
+| `limit.context` | `max_input_tokens ?? 0` from `/v1/models` | number |
+| `limit.input` | `max_input_tokens` | number \| undefined |
+| `limit.output` | `max_output_tokens ?? 0` from `/v1/models` | number |
+| `status` | hardcoded | `"active"` |
+
+---
+
+## 3. LiteLLM API endpoints used
+
+| Endpoint | Auth | Response shape | BlakeHastings | yuseferi | playground-gen |
+|---|---|---|---|---|---|
+| `GET /v1/models` | optional Bearer | `{"data": [{"id": "…", …}]}` | ✓ primary source | ✓ primary source | — |
+| `GET /public/model_hub` | none | plain JSON array of `ModelGroupInfoProxy` | — | — | ✓ primary source |
+| `GET /v1/model/info` | Bearer required | `{"data": [{"key":"…","model_info":{…}}]}` | — | — | ✓ optional (`--bearer`) |
+| `GET /public/model_hub/info` | none | hub metadata | — | — | — |
+
+### Fields from `GET /v1/models` — used by BlakeHastings and yuseferi
+
+| LiteLLM field | BlakeHastings maps to | yuseferi maps to |
+|---|---|---|
+| `data[].id` | `models.<id>.id` + `models.<id>.name` | `Model.id` + `Model.name` (via `formatModelName`) |
+| `data[].mode` | — | `categorizeModel()` → `capabilities.*` modality |
+| `data[].max_input_tokens` | — | `limit.context` + `limit.input` |
+| `data[].max_output_tokens` | — | `limit.output` |
+| `data[].supports_function_calling` | — | `capabilities.toolcall` |
+| `data[].supports_vision` | — | `capabilities.attachment` + `capabilities.input.image` |
+| `data[].litellm_provider` | — | `extractModelOwner()` (display only) |
+
+### Fields from `GET /public/model_hub` — used by playground-gen
+
+| LiteLLM field | playground-gen maps to |
+|---|---|
+| `model_group` | model key + `id` + `name` |
+| `mode` | category detection → blacklist membership |
+| `max_input_tokens` | `limit.context` + `limit.input` |
+| `max_output_tokens` | `limit.output` |
+| `input_cost_per_token` | `cost.input` |
+| `output_cost_per_token` | `cost.output` |
+| `cache_read_input_token_cost` | `cost.cache_read` (fallback if model/info absent) |
+| `cache_creation_input_token_cost` | `cost.cache_write` (fallback if model/info absent) |
+| `input_cost_per_token_above_200k_tokens` | `cost.context_over_200k.input` |
+| `output_cost_per_token_above_200k_tokens` | `cost.context_over_200k.output` |
+| `supports_function_calling` | `tool_call` |
+| `supports_parallel_function_calling` | `tool_call` (OR'd with above) |
+| `supports_vision` | `attachment` + `modalities.input: ["image"]` |
+| `supports_reasoning` | `reasoning` |
+| `supports_web_search` | — |
+| `supports_url_context` | — |
+| `health_status` | — |
+| `tpm` / `rpm` | — |
+| `providers` | — |
+
+### Fields from `GET /v1/model/info` — used by playground-gen only (requires `--bearer`)
+
+Each item in `data[]` has a nested `model_info` sub-object. All fields below live **inside `model_info`**, not at the top level of the array item.
+
+| LiteLLM field (inside `model_info`) | playground-gen maps to |
+|---|---|
+| `max_input_tokens` | `limit.context` + `limit.input` (preferred over hub) |
+| `max_output_tokens` | `limit.output` (preferred over hub) |
+| `max_tokens` | `limit.output` (fallback alias) |
+| `input_cost_per_token` | `cost.input` (preferred over hub) |
+| `output_cost_per_token` | `cost.output` (preferred over hub) |
+| `cache_read_input_token_cost` | `cost.cache_read` |
+| `cache_creation_input_token_cost` | `cost.cache_write` |
+| `input_cost_per_token_above_128k_tokens` | `cost.context_over_200k.input` |
+| `output_cost_per_token_above_128k_tokens` | `cost.context_over_200k.output` |
+| `supports_vision` | `attachment` + `modalities.input: ["image"]` (confirms hub value) |
+| `supports_function_calling` | `tool_call` (confirms hub value) |
+| `supports_reasoning` | `reasoning` (confirms hub value) |
+| `supports_audio_input` | `modalities.input: ["audio"]` — **only available from this endpoint** |
+| `supports_audio_output` | `modalities.output: ["audio"]` — **only available from this endpoint** |
+| `supports_pdf_input` | `modalities.input: ["pdf"]` — **only available from this endpoint** |
+| `supports_prompt_caching` | — |
+| `supports_system_messages` | — |
+| `litellm_provider` | — |
+| `mode` | — |
+
+---
+
+## 4. Non-chat model handling
+
+Non-chat models (embedding, TTS, image generation, etc.) clutter the model picker
+and are not useful for code-assistance chat. Each implementation handles them
+differently:
+
+| Behaviour | BlakeHastings | yuseferi | playground-gen |
+|---|---|---|---|
+| Detects non-chat models | no | yes — `categorizeModel()` on `mode` + id heuristics | yes — `_mode_to_category()` on `mode` field, name heuristics as fallback |
+| Strategy for non-chat models | no filtering — all models active | no filtering — all models active (embedding/image/audio included) | provider-level `blacklist` array |
+| All model data preserved | yes | yes | yes — all models in `models` block with full metadata |
+| Granularity of opt-in | n/a | n/a | per-category CLI flags: `--enable-embedding`, `--enable-audio-speech`, `--enable-transcription`, `--enable-image-generation`, `--enable-video-generation`, `--enable-ocr`, `--enable-ranking`, `--enable-all` |
+
+### How the playground-gen blacklist works
+
+All models — chat and non-chat — are written as active entries in the `"models"`
+block with full cost, limit, and capability metadata. Non-chat models whose
+category is not opted-in are additionally listed in the provider-level
+`"blacklist"` array, which causes OpenCode to hide them from the model picker
+(`provider.ts` L1373–1377) while leaving their data intact for reference.
+
+Each category group in the blacklist is preceded by a JSONC comment explaining
+why those models are hidden:
+
+```jsonc
+"blacklist": [
+  // embedding model — not used by opencode
+  "text-embedding-ada-002",
+  "text-embedding-3-large",
+  // image generation model — not used by opencode
+  "dall-e-3"
+],
 ```
 
-### Model Type (Runtime)
-Source: `@opencode-ai/sdk` → `packages/sdk/js/src/v2/gen/types.gen.ts`
-
-```typescript
-export type Model = {
-  id: string
-  providerID: string
-  api: { id: string; url: string; npm: string }
-  name: string
-  family?: string
-  capabilities: {
-    temperature: boolean
-    reasoning: boolean
-    attachment: boolean
-    toolcall: boolean
-    input: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean }
-    output: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean }
-    interleaved: boolean | { field: "reasoning_content" | "reasoning_details" }
-  }
-  cost: {
-    input: number
-    output: number
-    cache: { read: number; write: number }
-    experimentalOver200K?: { input: number; output: number; cache: { read: number; write: number } }
-  }
-  limit: { context: number; input?: number; output: number }
-  status: "alpha" | "beta" | "deprecated" | "active"
-  options: { [key: string]: unknown }
-  headers: { [key: string]: string }
-  release_date: string
-  variants?: { [key: string]: { [key: string]: unknown } }
-}
-```
-
-### ModelConfig (User Config)
-Source: `@opencode-ai/sdk` → `packages/sdk/js/src/v2/gen/types.gen.ts`
-
-```typescript
-models?: {
-  [key: string]: {
-    id?: string
-    name?: string
-    family?: string
-    release_date?: string
-    attachment?: boolean
-    reasoning?: boolean
-    temperature?: boolean
-    tool_call?: boolean
-    interleaved?: true | { field: "reasoning_content" | "reasoning_details" }
-    cost?: {
-      input: number
-      output: number
-      cache_read?: number
-      cache_write?: number
-      context_over_200k?: { input: number; output: number; cache: { read: number; write: number } }
-    }
-    limit?: {
-      context: number
-      input?: number
-      output: number
-    }
-    modalities?: {
-      input: Array<"text" | "audio" | "image" | "video" | "pdf">
-      output: Array<"text" | "audio" | "image" | "video" | "pdf">
-    }
-    experimental?: boolean
-    status?: "alpha" | "beta" | "deprecated"
-    provider?: { npm?: string; api?: string }
-    options?: { [key: string]: unknown }
-    headers?: { [key: string]: string }
-    variants?: { [key: string]: { disabled?: boolean; [key: string]: unknown } }
-  }
-}
-```
-
-### LiteLLM ModelGroupInfo Type
-Source: `litellm/types/router.py`
-
-```python
-class ModelGroupInfo(BaseModel):
-    model_group: str
-    providers: List[str]
-    max_input_tokens: Optional[float] = None
-    max_output_tokens: Optional[float] = None
-    input_cost_per_token: Optional[float] = None
-    output_cost_per_token: Optional[float] = None
-    input_cost_per_pixel: Optional[float] = None
-    mode: Optional[Literal["chat", "embedding", "completion", "image_generation",
-                           "audio_transcription", "rerank", "moderations"]] = "chat"
-    tpm: Optional[int] = None
-    rpm: Optional[int] = None
-    supports_parallel_function_calling: bool = False
-    supports_vision: bool = False
-    supports_web_search: bool = False
-    supports_url_context: bool = False
-    supports_reasoning: bool = False
-    supports_function_calling: bool = False
-    supported_openai_params: Optional[List[str]] = []
-
-class ModelGroupInfoProxy(ModelGroupInfo):
-    is_public_model_group: bool = False
-    health_status: Optional[str] = None
-    health_response_time: Optional[float] = None
-    health_checked_at: Optional[str] = None
-```
+To enable a category, pass `--enable-<category>` when generating the config —
+those model IDs are then omitted from the blacklist. `--enable-all` suppresses
+the `blacklist` key entirely. The user can also manually remove IDs from the
+blacklist in the generated file without regenerating it.
 
 ---
 
-## 5. Plugin Hooks Reference
+## 5. Auth and provider-setup flow
 
-### auth Hook
-The plugin registers an `auth` hook with:
-- `provider: "litellm"` - Targets the litellm provider
-- `loader` - Reads stored credentials from auth.json
-- `methods` - Single "api" type method with baseURL prompt
-
-### chat.params Hook
-Injects `litellm_session_id` via `providerOptions.litellm` for LiteLLM admin UI session grouping.
-
-### config Hook
-- Reads auth from auth.json (key, metadata.baseURL)
-- Falls back to opencode.json for baseURL
-- Injects runtime provider with placeholder model
-- Calls `GET /v1/models` to discover actual models
+| Aspect | BlakeHastings | yuseferi | playground-gen |
+|---|---|---|---|
+| Auth mechanism | Full `/connect litellm` UI: `auth` hook with `loader` + `authorize` method. Stores API key + `baseURL` in `~/.local/share/opencode/auth.json`. | Reads `options.apiKey` from provider config or `LITELLM_API_KEY` / `LITELLM_MASTER_KEY` env. No `/connect` flow. | `--bearer TOKEN` arg for `/v1/model/info`. API key not written to config. |
+| Provider discovery | Reads `auth.json`, falls back to `opencode.json`. Default: `http://localhost:4000`. | Reads `options.baseURL` from provider config, then auto-detects `localhost:4000`, `:8000`, `:8080`. | `--base-url` required argument. |
+| Config written at runtime | `config` hook writes `provider.litellm` into `opencode.json` on every startup. | `provider.models` hook returns model map; user must declare provider shell in `opencode.json`. | Static `opencode.jsonc` file; must re-run script to update. |
+| Multiple providers | Single `litellm` provider. | `litellm` + optional `litellm-responses` for OpenAI reasoning-tier routing. | Single provider; key and name configurable. |
+| Session ID tagging | Yes — `chat.params` hook injects `litellm_session_id` into `providerOptions.litellm`. | No (noted as roadmap item). | n/a |
 
 ---
 
-## 6. File Paths
+## 6. Runtime effects of model fields
 
-| Path | Purpose |
-|------|---------|
-| `~/.config/opencode/opencode.json` | OpenCode config (provider definitions) |
-| `~/.local/share/opencode/auth.json` | OpenCode auth store (API keys, metadata) |
+Exact locations in the OpenCode source where each field is read and what effect it has.
 
----
-
-## 7. Recommended LiteLLM Endpoints for Full Field Coverage
-
-Based on available LiteLLM endpoints and OpenCode model fields, here's the recommended approach:
-
-### Best Option: `/v1/model/info`
-- Provides comprehensive model metadata including costs, limits, capabilities
-- Use `GET /v1/model/info?model_info_fields=key,mode,max_tokens,...` (LiteLLM v1.74.3+)
-- Single request per proxy startup
-
-### Alternative: `/public/model_hub`
-- Aggregated data per model group
-- Includes health check status
-- Less granular than `/v1/model/info` but public access (no auth required in some configs)
-
-### Recommended Data Sources by OpenCode Field
-
-| OpenCode Field | Recommended Source | LiteLLM Field |
-|----------------|-------------------|---------------|
-| `models.*.id` | `/v1/model/info` | `key` |
-| `models.*.name` | `/v1/model/info` | `model_name` |
-| `models.*.cost.input` | `/v1/model/info` or `/public/model_hub` | `input_cost_per_token` |
-| `models.*.cost.output` | `/v1/model/info` or `/public/model_hub` | `output_cost_per_token` |
-| `models.*.cost.cache_read` | `/v1/model/info` | `cache_read_input_token_cost` |
-| `models.*.cost.cache_write` | `/v1/model/info` | `cache_creation_input_token_cost` |
-| `models.*.limit.context` | `/v1/model/info` or `/public/model_hub` | `max_input_tokens` |
-| `models.*.limit.output` | `/v1/model/info` or `/public/model_hub` | `max_output_tokens` or `max_tokens` |
-| `models.*.capabilities.input.image` | `/v1/model/info` or `/public/model_hub` | `supports_vision` |
-| `models.*.capabilities.toolcall` | `/v1/model/info` or `/public/model_hub` | `supports_function_calling` |
-| `models.*.capabilities.reasoning` | `/v1/model/info` or `/public/model_hub` | `supports_reasoning` |
-| `models.*.capabilities.input.audio` | `/v1/model/info` | `supports_audio_input` |
-| `models.*.capabilities.input.pdf` | `/v1/model/info` | `supports_pdf_input` |
+| Field | File + line | Effect |
+|---|---|---|
+| `capabilities.temperature` | `llm.ts` L171–173 | If `false`, temperature is never sent; agent/model temperature settings are ignored |
+| `capabilities.reasoning` | `transform.ts` `variants()` L630; `options()` L1102 | If `false`, no reasoning-effort variants are generated; no `thinkingConfig` injected for Google |
+| `capabilities.attachment` | `transform.ts` `unsupportedParts()` L418 | If `false`, image/file parts in user messages are replaced with an error-text message |
+| `capabilities.input.*` | `transform.ts` `unsupportedParts()` L418 | Per-modality gate: `image`, `audio`, `video`, `pdf` checked individually against attached file MIME type |
+| `capabilities.interleaved` | `transform.ts` `normalizeMessages()` L306–337 | If `{ field: "reasoning_content" \| "reasoning_details" }`, reasoning text is extracted from assistant messages and injected as a provider option under that field name |
+| `capabilities.toolcall` | (not gated in source — tools are always offered) | Informs OpenCode UI; not used as a request gate |
+| `limit.output` | `transform.ts` `maxOutputTokens()` L1281 | `min(limit.output, 32 000)` caps `maxOutputTokens` on every request |
+| `limit.output` | `transform.ts` `variants()` L858–866 | Anthropic `thinking.budgetTokens` = `min(31 999, limit.output − 1)` |
+| `limit.output` | `transform.ts` `options()` L1120 | Kimi-k2 on Anthropic SDK: `thinking.budgetTokens` = `min(16 000, floor(limit.output / 2 − 1))` |
+| `release_date` | `transform.ts` `openaiReasoningEfforts()` L583–584 | Date-gates whether `none` and `xhigh` reasoning effort tiers are offered for OpenAI models |
+| `api.npm` | `transform.ts` throughout | Selects provider-specific message transforms, caching strategy, providerOptions key name |
+| `api.id` | `transform.ts` throughout | Selects model-specific transforms (Claude tool-call ID scrubbing, Deepseek reasoning injection, etc.) |
+| `options` (per-model) | `llm.ts` L141 | Merged into request options; can override provider-level options per model |
+| `headers` (per-model) | `llm.ts` L387 | Merged into HTTP headers on every request to this model |
+| `variants` (per-model) | `llm.ts` L130–133 | Selected by user's variant choice at session start; merged into request options |
+| `modalities.input` | `transform.ts` `unsupportedParts()` L418 | Same gate as `capabilities.input.*` — only one of the two schemas is present depending on whether the model came from config or models.dev |
 
 ---
 
-## Summary: Plugin vs Full Field Coverage
+## 7. Coverage summary
 
-| Category | Fields Set | Fields Missing | Coverage |
-|----------|-----------|----------------|----------|
-| Provider | 4 | 9 | 31% |
-| Model | 2 | 23 | 8% |
-| **Total** | **6** | **32** | **16%** |
+### Provider fields
 
-The plugin only extracts `id` and `name` from LiteLLM. To achieve full field coverage, use LiteLLM's `/v1/model/info` endpoint which provides costs, limits, and capability information.
+| Field | Any source sets it? | Gap |
+|---|---|---|
+| `npm` | all three | — |
+| `name` | BlakeHastings, playground-gen | yuseferi requires user to set it |
+| `options.baseURL` | all three | — |
+| `options.apiKey` | BlakeHastings (runtime injection), yuseferi (runtime read) | playground-gen intentionally omits — user provides |
+| `options.litellmProxy` | playground-gen | BlakeHastings/yuseferi rely on providerID heuristic instead |
+| `options.timeout` / `chunkTimeout` | none | all three implementations |
+| `env` | none | all three implementations |
+| `whitelist` | none | all three implementations |
+| `blacklist` | playground-gen (non-chat filtering) | BlakeHastings, yuseferi |
+
+### Model fields
+
+| Field | BlakeHastings | yuseferi | playground-gen | Remaining gap |
+|---|---|---|---|---|
+| `id` | — | ✓ | ✓ | BlakeHastings |
+| `name` | ✓ | ✓ | ✓ | — |
+| `tool_call` / `toolcall` | — | ✓ | ✓ | BlakeHastings |
+| `attachment` | — | ✓ | ✓ | BlakeHastings |
+| `reasoning` | — | ✗ hardcoded `false` | ✓ | BlakeHastings, yuseferi |
+| `temperature` | — | ✓ | ✓ | BlakeHastings |
+| `interleaved` | — | — | — | all three |
+| `cost.input` / `cost.output` | — | ✗ hardcoded `0` | ✓ | BlakeHastings, yuseferi |
+| `cost.cache_read` / `cost.cache_write` | — | — | ✓ (with `--bearer`) | BlakeHastings, yuseferi |
+| `cost.context_over_200k` | — | — | ✓ (with `--bearer`) | BlakeHastings, yuseferi |
+| `limit.context` | — | ✓ | ✓ | BlakeHastings |
+| `limit.output` | — | ✓ | ✓ | BlakeHastings |
+| `modalities.input` / `output` | — | ✓ (via V2 capabilities) | ✓ | BlakeHastings |
+| `release_date` | — | ✗ empty string | — | all three (affects reasoning variant date gating) |
+| `status` | — | ✓ (`"active"`) | — | BlakeHastings, playground-gen |
+| `family` | — | — | — | all three |
+| `variants` | — | — | — | all three (auto-generated by OpenCode from `reasoning` + `api.npm`) |
+| `headers` | — | ✗ empty object | — | BlakeHastings, playground-gen |
 
 ---
 
-*Documentation generated for opencode-litellm plugin analysis.*
-*LiteLLM API reference: https://docs.litellm.ai/docs/proxy/model_management*
-*LiteLLM Model Hub: https://docs.litellm.ai/docs/proxy/ai_hub*
+*Sources verified directly from: `packages/opencode/src/config/provider.ts`, `src/provider/models.ts`, `src/provider/transform.ts`, `src/session/llm.ts` (OpenCode `dev` branch, `repos/opencode/`); `repos/opencode-litellm@BlakeHastings/src/index.ts`; `repos/opencode-litellm@yuseferi/src/plugin/build-model.ts`, `discover.ts`, `index.ts`, `utils/`; `tools/config-generator/src/generate.py`.*
