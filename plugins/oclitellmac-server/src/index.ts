@@ -136,8 +136,25 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
           }
         }
         
-        // Build blacklist for non-chat models (TODO: make configurable via enabledCategories)
-        const enabledCategories = new Set<Category>() // Empty = only chat models enabled
+        // Build blacklist for non-chat models based on endpoint configuration
+        const enabledCategories = new Set<Category>()
+        
+        if (endpoint.enableAllCategories) {
+          // Enable all non-chat categories
+          enabledCategories.add("embedding")
+          enabledCategories.add("audio_speech")
+          enabledCategories.add("transcription")
+          enabledCategories.add("image_generation")
+          enabledCategories.add("video_generation")
+          enabledCategories.add("ocr")
+          enabledCategories.add("ranking")
+          enabledCategories.add("router")
+        } else if (endpoint.enabledCategories) {
+          // Enable specific categories from config
+          endpoint.enabledCategories.forEach((cat) => enabledCategories.add(cat as Category))
+        }
+        // else: enabledCategories is empty = only chat models enabled (default)
+        
         const blacklist = buildBlacklist(categories, enabledCategories)
         
         // Inject provider into OpenCode config

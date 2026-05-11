@@ -2,6 +2,19 @@ import { z } from "zod"
 import { readFile } from "fs/promises"
 import { homedir } from "os"
 import path from "path"
+import type { Category } from "./categorize"
+
+// Valid non-chat category names
+const CategorySchema = z.enum([
+  "embedding",
+  "audio_speech",
+  "transcription",
+  "image_generation",
+  "video_generation",
+  "ocr",
+  "ranking",
+  "router",
+])
 
 // Endpoint configuration schema
 export const EndpointConfigSchema = z.object({
@@ -10,6 +23,8 @@ export const EndpointConfigSchema = z.object({
   providerKey: z.string(),
   providerName: z.string().optional(),
   enabled: z.boolean().optional().default(true),
+  enabledCategories: z.array(CategorySchema).optional(),
+  enableAllCategories: z.boolean().optional().default(false),
 })
 
 // Server configuration schema

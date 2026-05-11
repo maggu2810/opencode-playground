@@ -8,6 +8,7 @@
 - 🔗 **Multiple endpoints** - Configure multiple LiteLLM proxies at once
 - 🔑 **Automatic authentication** - API keys stored in plugin config
 - 📊 **Model discovery** - Fetches models from LiteLLM `/public/model_hub` and `/v1/model/info`
+- 🎯 **Smart model filtering** - Blacklists non-chat models by default (embedding, TTS, image gen, etc.)
 - 💾 **Smart caching** - Falls back to cached data if endpoints are unreachable
 - 💰 **Budget tracking** - Monitors usage via `/key/info` endpoint
 - 🔒 **File locking** - Prevents concurrent write collisions
@@ -54,15 +55,86 @@ Create `~/.config/oclitellmac/server.json`:
 
 - **`baseUrl`** (string, required): LiteLLM proxy base URL (without `/v1`)
 - **`apiKey`** (string, required): Bearer token for API authentication
-- **`providerName`** (string, required): Display name in OpenCode UI
+- **`providerName`** (string, optional): Display name in OpenCode UI (auto-formatted from `providerKey` if omitted)
 - **`providerKey`** (string, required): Unique provider identifier
 - **`enabled`** (boolean, optional, default: `true`): Whether to load this endpoint
+- **`enabledCategories`** (array, optional, default: `[]`): Non-chat model categories to enable (see below)
+- **`enableAllCategories`** (boolean, optional, default: `false`): Enable all non-chat models
 
 #### Options
 
 - **`timeout`** (number, optional, default: `30`): HTTP request timeout in seconds
 - **`budgetPollInterval`** (number, optional, default: `60`): How often to poll `/key/info` in seconds
 - **`fallbackToCache`** (boolean, optional, default: `true`): Use cached data if endpoint unreachable
+
+## Model Category Filtering
+
+By default, the plugin **blacklists non-chat models** to keep the model picker clean and focused on code assistance. Non-chat models (embeddings, TTS, image generation, etc.) are still fetched and their metadata is preserved, but they're hidden from the UI.
+
+### Default Behavior (Chat Models Only)
+
+```json
+{
+  "endpoints": [
+    {
+      "providerKey": "litellm-prod",
+      "baseUrl": "https://litellm.example.com",
+      "apiKey": "sk-..."
+    }
+  ]
+}
+```
+
+Only chat models appear in the model picker. Non-chat models are blacklisted automatically.
+
+### Enable Specific Categories
+
+```json
+{
+  "endpoints": [
+    {
+      "providerKey": "litellm-with-embeddings",
+      "baseUrl": "https://litellm.example.com",
+      "apiKey": "sk-...",
+      "enabledCategories": ["embedding", "audio_speech"]
+    }
+  ]
+}
+```
+
+This enables embedding and TTS models while keeping other non-chat models blacklisted.
+
+### Enable All Non-Chat Models
+
+```json
+{
+  "endpoints": [
+    {
+      "providerKey": "litellm-all-models",
+      "baseUrl": "https://litellm.example.com",
+      "apiKey": "sk-...",
+      "enableAllCategories": true
+    }
+  ]
+}
+```
+
+This shows **all** models in the picker, including embedding, image generation, transcription, etc.
+
+### Available Categories
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| `embedding` | Text embedding models | `text-embedding-ada-002`, `text-embedding-3-large` |
+| `audio_speech` | Text-to-speech (TTS) | `tts-1`, `tts-1-hd` |
+| `transcription` | Speech-to-text (STT) | `whisper-1` |
+| `image_generation` | Image generation | `dall-e-3`, `stable-diffusion-xl` |
+| `video_generation` | Video generation | Model-specific |
+| `ocr` | Document analysis / OCR | Model-specific |
+| `ranking` | Reranking models | Model-specific |
+| `router` | Model routing / moderation | Model-specific |
+
+**Note**: Chat models are **always enabled** regardless of category settings.
 
 ## State Storage
 
