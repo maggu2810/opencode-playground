@@ -77,3 +77,52 @@ export function formatRelativeTime(isoString: string | number): string {
     return 'unknown'
   }
 }
+
+/**
+ * Format timestamp with smart display:
+ * - Recent (< 1 hour): relative only ("2m ago", "45s ago")
+ * - Today (< 24 hours): relative + time ("2h ago (2:33 PM)")
+ * - Older: relative + date+time ("2d ago (5/9 2:33 PM)")
+ * 
+ * Respects system timezone via toLocaleTimeString/toLocaleDateString
+ */
+export function formatSmartTime(timestamp: number): string {
+  try {
+    const date = new Date(timestamp)
+    const now = Date.now()
+    const diffMs = now - date.getTime()
+    const diffMinutes = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    
+    const relative = formatRelativeTime(timestamp)
+    
+    // Recent (< 1 hour): just relative
+    if (diffMinutes < 60) {
+      return relative
+    }
+    
+    // Today (< 24 hours): relative + time
+    if (diffHours < 24) {
+      const timeStr = date.toLocaleTimeString(undefined, { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      })
+      return `${relative} (${timeStr})`
+    }
+    
+    // Older: relative + date+time
+    const dateStr = date.toLocaleDateString(undefined, { 
+      month: 'numeric', 
+      day: 'numeric' 
+    })
+    const timeStr = date.toLocaleTimeString(undefined, { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    })
+    return `${relative} (${dateStr} ${timeStr})`
+  } catch {
+    return 'unknown'
+  }
+}

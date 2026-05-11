@@ -8,6 +8,7 @@
  */
 export interface KeyInfoFile {
   providerKey: string
+  providerName?: string
   fetchedAt: number
   keyInfo: {
     key: string

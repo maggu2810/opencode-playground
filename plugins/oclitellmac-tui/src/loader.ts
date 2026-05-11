@@ -80,7 +80,7 @@ export class BudgetLoader {
       // Transform to normalized format
       return {
         providerKey: data.providerKey,
-        providerName: this.formatProviderName(data.providerKey),
+        providerName: data.providerName ?? this.formatProviderName(data.providerKey),
         keyAlias: data.keyInfo.info.key_alias || 'Unknown',
         spend: data.keyInfo.info.spend,
         limit: data.keyInfo.info.max_budget,

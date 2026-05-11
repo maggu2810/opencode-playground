@@ -58,6 +58,7 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
   
   // Track clients for budget fetching
   const clientMap = new Map<string, LiteLLMClient>()
+  const providerNamesMap = new Map<string, string>()
   
   return {
     /**
@@ -178,8 +179,12 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
         
         opcodeConfig.provider[endpoint.providerKey] = providerConfig
         
+        // Store provider name for budget tracking
+        const providerName = endpoint.providerName ?? formatProviderName(endpoint.providerKey)
+        providerNamesMap.set(endpoint.providerKey, providerName)
+        
         // Start budget tracking
-        budgetTracker.startTracking(endpoint.providerKey, client)
+        budgetTracker.startTracking(endpoint.providerKey, providerName, client)
       }
       
       log(
@@ -194,7 +199,8 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
       // Trigger budget fetch for all active providers
       // Fire-and-forget to avoid blocking message processing
       for (const [providerKey, client] of clientMap) {
-        budgetTracker.fetchAndStore(providerKey, client).catch(() => {
+        const providerName = providerNamesMap.get(providerKey) ?? formatProviderName(providerKey)
+        budgetTracker.fetchAndStore(providerKey, providerName, client).catch(() => {
           // Errors already logged in fetchAndStore
         })
       }

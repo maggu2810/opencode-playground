@@ -7,6 +7,7 @@ import { StateManager } from "./state"
  */
 export class BudgetTracker {
   private intervals = new Map<string, NodeJS.Timeout>()
+  private providerNames = new Map<string, string>()
   
   constructor(
     private stateManager: StateManager,
@@ -19,6 +20,7 @@ export class BudgetTracker {
    */
   async fetchAndStore(
     providerKey: string,
+    providerName: string,
     client: LiteLLMClient
   ): Promise<void> {
     try {
@@ -26,6 +28,7 @@ export class BudgetTracker {
       
       await this.stateManager.saveBudgetData(providerKey, {
         providerKey,
+        providerName,
         fetchedAt: Date.now(),
         keyInfo,
       })
@@ -41,20 +44,24 @@ export class BudgetTracker {
   /**
    * Start periodic budget tracking for a provider
    */
-  startTracking(providerKey: string, client: LiteLLMClient): void {
+  startTracking(providerKey: string, providerName: string, client: LiteLLMClient): void {
     if (this.intervals.has(providerKey)) {
       this.log(`Budget tracking already active for ${providerKey}`)
       return
     }
     
+    // Store provider name for periodic fetches
+    this.providerNames.set(providerKey, providerName)
+    
     // Initial fetch
-    this.fetchAndStore(providerKey, client).catch(() => {
+    this.fetchAndStore(providerKey, providerName, client).catch(() => {
       // Error already logged in fetchAndStore
     })
     
     // Periodic fetch
     const interval = setInterval(() => {
-      this.fetchAndStore(providerKey, client).catch(() => {
+      const name = this.providerNames.get(providerKey) ?? providerKey
+      this.fetchAndStore(providerKey, name, client).catch(() => {
         // Error already logged in fetchAndStore
       })
     }, this.pollInterval * 1000)
