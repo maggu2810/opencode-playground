@@ -2,7 +2,7 @@
 import type { TuiPluginApi } from '@opencode-ai/plugin/tui'
 import type { RGBA } from '@opentui/core'
 import type { ProviderBudget } from '../types'
-import { formatCurrency, formatPercent, formatProgressBar, formatRelativeTime, formatSmartTime } from '../utils/format'
+import { formatCurrency, formatPercent, formatProgressBar, formatRelativeTime, formatAbsoluteTimeLocale } from '../utils/format'
 
 interface ProviderCardProps {
   budget: ProviderBudget
@@ -55,7 +55,7 @@ export function ProviderCard(props: ProviderCardProps) {
 
       {/* Fetch timestamp */}
       <text fg={theme().textMuted}>
-        Fetched {formatSmartTime(budget.lastFetched)}
+        Fetched {formatAbsoluteTimeLocale(budget.lastFetched)}
       </text>
     </box>
   )

@@ -126,3 +126,49 @@ export function formatSmartTime(timestamp: number): string {
     return 'unknown'
   }
 }
+
+/**
+ * Format timestamp as absolute time (ISO-style)
+ * Example: "2026-05-11 11:31:23"
+ * 
+ * Pros: Complete, unambiguous, sortable
+ * Cons: Formal, takes more space
+ */
+export function formatAbsoluteTimeISO(timestamp: number): string {
+  try {
+    const date = new Date(timestamp)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * Format timestamp as absolute time (locale-aware)
+ * Example: "5/11/2026, 11:31:23 AM"
+ * 
+ * Respects system timezone and locale settings.
+ * Shorter and more user-friendly than ISO format.
+ */
+export function formatAbsoluteTimeLocale(timestamp: number): string {
+  try {
+    const date = new Date(timestamp)
+    return date.toLocaleString(undefined, {
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })
+  } catch {
+    return 'unknown'
+  }
+}
