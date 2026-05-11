@@ -57,9 +57,6 @@ export function ProviderCard(props: ProviderCardProps) {
       <text fg={theme().textMuted}>
         Fetched {formatSmartTime(budget.lastFetched)}
       </text>
-
-      {/* Key alias (small, dim) */}
-      <text fg={theme().textMuted}>{budget.keyAlias}</text>
     </box>
   )
 }
