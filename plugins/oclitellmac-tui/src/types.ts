@@ -4,17 +4,26 @@
  * Raw structure from ~/.local/state/oclitellmac/key-info/<provider>.json
  * 
  * This matches the LiteLLM /key/info endpoint response structure.
+ * Response has nested structure: {key: string, info: {...}}
  */
 export interface KeyInfoFile {
   providerKey: string
   fetchedAt: number
   keyInfo: {
-    key_alias: string
-    spend: number
-    max_budget: number
-    budget_duration: string
-    budget_reset_at: string
-    expires: string
+    key: string
+    info: {
+      key_alias: string
+      spend: number
+      max_budget: number
+      budget_duration?: string
+      budget_reset_at?: string
+      expires?: string
+      key_name?: string
+      soft_budget_cooldown?: boolean
+      models?: string[]
+      aliases?: Record<string, any>
+      config?: Record<string, any>
+    }
   }
 }
 

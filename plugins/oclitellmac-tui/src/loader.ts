@@ -8,8 +8,10 @@ import type { KeyInfoFile, ProviderBudget, BudgetData } from './types'
  */
 export class BudgetLoader {
   private stateDir: string
+  private log: (level: 'info' | 'error' | 'warn', message: string) => void
 
-  constructor() {
+  constructor(log: (level: 'info' | 'error' | 'warn', message: string) => void) {
+    this.log = log
     this.stateDir = path.join(homedir(), '.local', 'state', 'oclitellmac')
   }
 
@@ -23,28 +25,36 @@ export class BudgetLoader {
   /**
    * Load all budget files from key-info directory
    */
-  async loadAll(): Promise<BudgetData> {
+  async loadAll(): Promise<{ budgets: BudgetData; hasErrors: boolean; errorCount: number }> {
     const keyInfoDir = path.join(this.stateDir, 'key-info')
     const budgets: BudgetData = {}
+    let errorCount = 0
 
     try {
       const files = await readdir(keyInfoDir)
+      const jsonFiles = files.filter(f => f.endsWith('.json'))
 
-      for (const file of files) {
-        if (!file.endsWith('.json')) continue
-
+      for (const file of jsonFiles) {
         const providerKey = file.replace('.json', '')
         const budget = await this.loadOne(providerKey)
 
         if (budget) {
           budgets[providerKey] = budget
+        } else {
+          errorCount++
+          this.log('warn', `Failed to parse budget data for ${providerKey}`)
         }
       }
     } catch (error) {
-      // Directory doesn't exist yet or is inaccessible - return empty
+      // Directory doesn't exist yet or is inaccessible
+      this.log('info', 'Budget directory not found - waiting for server plugin')
     }
 
-    return budgets
+    return {
+      budgets,
+      hasErrors: errorCount > 0,
+      errorCount
+    }
   }
 
   /**
@@ -57,12 +67,13 @@ export class BudgetLoader {
       const content = await readFile(filePath, 'utf-8')
       const data = JSON.parse(content) as KeyInfoFile
 
-      // Validate required fields
+      // Validate required fields (nested under info)
       if (
-        !data.keyInfo ||
-        typeof data.keyInfo.spend !== 'number' ||
-        typeof data.keyInfo.max_budget !== 'number'
+        !data.keyInfo?.info ||
+        typeof data.keyInfo.info.spend !== 'number' ||
+        typeof data.keyInfo.info.max_budget !== 'number'
       ) {
+        this.log('error', `Invalid budget data for ${data.providerKey}: missing or invalid keyInfo.info fields`)
         return null
       }
 
@@ -70,14 +81,14 @@ export class BudgetLoader {
       return {
         providerKey: data.providerKey,
         providerName: this.formatProviderName(data.providerKey),
-        keyAlias: data.keyInfo.key_alias,
-        spend: data.keyInfo.spend,
-        limit: data.keyInfo.max_budget,
-        remaining: data.keyInfo.max_budget - data.keyInfo.spend,
-        percentUsed: (data.keyInfo.spend / data.keyInfo.max_budget) * 100,
-        duration: data.keyInfo.budget_duration,
-        resetAt: data.keyInfo.budget_reset_at,
-        expiresAt: data.keyInfo.expires,
+        keyAlias: data.keyInfo.info.key_alias || 'Unknown',
+        spend: data.keyInfo.info.spend,
+        limit: data.keyInfo.info.max_budget,
+        remaining: data.keyInfo.info.max_budget - data.keyInfo.info.spend,
+        percentUsed: (data.keyInfo.info.spend / data.keyInfo.info.max_budget) * 100,
+        duration: data.keyInfo.info.budget_duration || 'Unknown',
+        resetAt: data.keyInfo.info.budget_reset_at || 'Unknown',
+        expiresAt: data.keyInfo.info.expires || 'Never',
         lastFetched: data.fetchedAt,
       }
     } catch (error) {

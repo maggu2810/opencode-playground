@@ -20,17 +20,31 @@ const POLL_INTERVAL_MS = 5000 // 5 second fallback polling
  * new budget data.
  */
 const tui: TuiPlugin = async (api) => {
-  const loader = new BudgetLoader()
+  // Logger helper
+  const log = (level: 'info' | 'error' | 'warn', message: string) => {
+    api.client.app.log({
+      service: 'oclitellmac-tui',
+      level,
+      message,
+    }).catch(() => {})
+  }
+
+  const loader = new BudgetLoader(log)
 
   // Reactive state
   const [budgetData, setBudgetData] = createSignal<BudgetData>({})
+  const [loadStatus, setLoadStatus] = createSignal<{ hasErrors: boolean; errorCount: number }>({ 
+    hasErrors: false, 
+    errorCount: 0 
+  })
 
   /**
    * Refresh all budget data from files
    */
   async function refreshBudgets() {
-    const data = await loader.loadAll()
-    setBudgetData(data)
+    const result = await loader.loadAll()
+    setBudgetData(result.budgets)
+    setLoadStatus({ hasErrors: result.hasErrors, errorCount: result.errorCount })
   }
 
   // Initial load
@@ -42,7 +56,7 @@ const tui: TuiPlugin = async (api) => {
     () => {
       // File changed - reload budget data
       refreshBudgets().catch((error) => {
-        console.error('[oclitellmac-tui] Failed to refresh budgets:', error)
+        log('error', `Failed to refresh budgets: ${error instanceof Error ? error.message : String(error)}`)
       })
     },
     POLL_INTERVAL_MS,
@@ -55,7 +69,12 @@ const tui: TuiPlugin = async (api) => {
     slots: {
       sidebar_content(_ctx, props) {
         return (
-          <KeyInfoPanel api={api} sessionId={props.session_id} budgetData={budgetData()} />
+          <KeyInfoPanel 
+            api={api} 
+            sessionId={props.session_id} 
+            budgetData={budgetData()}
+            loadStatus={loadStatus()}
+          />
         )
       },
     },

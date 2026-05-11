@@ -9,6 +9,7 @@ interface KeyInfoPanelProps {
   api: TuiPluginApi
   sessionId: string
   budgetData: BudgetData
+  loadStatus: { hasErrors: boolean; errorCount: number }
 }
 
 /**
@@ -33,8 +34,16 @@ export function KeyInfoPanel(props: KeyInfoPanelProps) {
 
       {/* No data state */}
       <Show when={budgets().length === 0}>
-        <text fg={theme().textMuted}>No budget data available</text>
-        <text fg={theme().textMuted}>Waiting for oclitellmac-server...</text>
+        <Show when={props.loadStatus.hasErrors}>
+          <text fg={theme().textMuted}>
+            Budget data parsing error ({props.loadStatus.errorCount} file{props.loadStatus.errorCount !== 1 ? 's' : ''})
+          </text>
+          <text fg={theme().textMuted}>Check logs for details</text>
+        </Show>
+        <Show when={!props.loadStatus.hasErrors}>
+          <text fg={theme().textMuted}>No budget data available</text>
+          <text fg={theme().textMuted}>Waiting for oclitellmac-server...</text>
+        </Show>
       </Show>
 
       {/* Provider cards */}
