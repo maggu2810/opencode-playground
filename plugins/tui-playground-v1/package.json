@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./src/index.ts",
+  "dependencies": {
+    "@opencode-ai/plugin": "*",
+    "@opencode-ai/sdk": "*",
+    "@opentui/core": ">=0.2.6",
+    "@opentui/keymap": ">=0.2.6",
+    "@opentui/solid": ">=0.2.6",
+    "solid-js": "*"
+  },
   "peerDependencies": {
     "@opentui/core": ">=0.2.6",
     "@opentui/keymap": ">=0.2.6",
