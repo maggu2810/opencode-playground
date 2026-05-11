@@ -1,13 +1,14 @@
 # OpenCode × LiteLLM — Field Coverage Reference
 
 Verified against the OpenCode source tree (`repos/opencode/`, branch `dev`).
-Three implementations are compared:
+Four implementations are compared:
 
 | Label | What it is |
 |---|---|
 | **BlakeHastings** | `repos/opencode-litellm@BlakeHastings/src/index.ts` — v1 plugin API, `config` + `auth` + `chat.params` hooks |
 | **yuseferi** | `repos/opencode-litellm@yuseferi/src/plugin/` — v2 plugin API, `provider.models` hook |
 | **playground-gen** | `tools/config-generator/src/generate.py` — generates static `opencode.jsonc` for one configurable provider |
+| **oclitellmac-server** | `plugins/oclitellmac-server/src/` — multi-endpoint auto-config plugin, `config` hook + budget tracking |
 
 ---
 
@@ -15,25 +16,25 @@ Three implementations are compared:
 
 Source of truth: `packages/opencode/src/config/provider.ts` (`Info` schema, L71–108).
 
-| Field | OpenCode uses it for | BlakeHastings | yuseferi | playground-gen |
-|---|---|---|---|---|
-| `npm` | Selects the AI SDK adapter package | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` (chat) / `"@ai-sdk/openai"` (responses) | `"@ai-sdk/openai-compatible"` |
-| `name` | Display name in UI | `"LiteLLM"` | not set¹ | configurable via `--provider-name` |
-| `options.baseURL` | API endpoint for all requests | `${rootURL}/v1` | read from provider config or env | `${base_url}/v1` |
-| `options.apiKey` | Bearer token sent with every request | injected at runtime from auth store | read from provider config or `LITELLM_API_KEY` env | **omitted** — user sets it |
-| `options.litellmProxy` | Enables stub-tool injection for LiteLLM compatibility (`llm.ts` L203–206) | **not set** | **not set** | `true` |
-| `options.timeout` | Request timeout (default 300 000 ms) | **not set** | **not set** | **not set** |
-| `options.chunkTimeout` | SSE chunk timeout | **not set** | **not set** | **not set** |
-| `options.setCacheKey` | Enable `promptCacheKey` per-session | **not set** | **not set** | **not set** |
-| `options.transport` | yuseferi routing policy (`auto`/`chat`/`responses`) | n/a | read from provider config | n/a |
-| `options.responsesApiModels` | yuseferi explicit allowlist for Responses API | n/a | read from provider config | n/a |
-| `options.chatApiModels` | yuseferi explicit denylist for Responses API | n/a | read from provider config | n/a |
-| `api` | Override API URL entirely | **not set** | **not set** | **not set** |
-| `id` | Provider identifier override | **not set** | **not set** | **not set** |
-| `env` | Env var names OpenCode checks for the API key | **not set** | **not set** | **not set** |
-| `whitelist` | Restrict visible models to a named subset | **not set** | **not set** | **not set** |
-| `blacklist` | Hide specific models from the model picker | **not set** | **not set** | set — non-chat model IDs by default; see §4 |
-| `models` | Per-model config overrides | set (see §2) | set dynamically via `provider.models` hook | set statically in JSONC |
+| Field | OpenCode uses it for | BlakeHastings | yuseferi | playground-gen | oclitellmac-server |
+|---|---|---|---|---|---|
+| `npm` | Selects the AI SDK adapter package | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` (chat) / `"@ai-sdk/openai"` (responses) | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` |
+| `name` | Display name in UI | `"LiteLLM"` | not set¹ | configurable via `--provider-name` | from `server.json` `providerName` field |
+| `options.baseURL` | API endpoint for all requests | `${rootURL}/v1` | read from provider config or env | `${base_url}/v1` | from `server.json` `baseUrl` field + `/v1` |
+| `options.apiKey` | Bearer token sent with every request | injected at runtime from auth store | read from provider config or `LITELLM_API_KEY` env | **omitted** — user sets it | from `server.json` `apiKey` field |
+| `options.litellmProxy` | Enables stub-tool injection for LiteLLM compatibility (`llm.ts` L203–206) | **not set** | **not set** | `true` | `true` |
+| `options.timeout` | Request timeout (default 300 000 ms) | **not set** | **not set** | **not set** | **not set** |
+| `options.chunkTimeout` | SSE chunk timeout | **not set** | **not set** | **not set** | **not set** |
+| `options.setCacheKey` | Enable `promptCacheKey` per-session | **not set** | **not set** | **not set** | **not set** |
+| `options.transport` | yuseferi routing policy (`auto`/`chat`/`responses`) | n/a | read from provider config | n/a | n/a |
+| `options.responsesApiModels` | yuseferi explicit allowlist for Responses API | n/a | read from provider config | n/a | n/a |
+| `options.chatApiModels` | yuseferi explicit denylist for Responses API | n/a | read from provider config | n/a | n/a |
+| `api` | Override API URL entirely | **not set** | **not set** | **not set** | **not set** |
+| `id` | Provider identifier override | **not set** | **not set** | **not set** | **not set** |
+| `env` | Env var names OpenCode checks for the API key | **not set** | **not set** | **not set** | **not set** |
+| `whitelist` | Restrict visible models to a named subset | **not set** | **not set** | **not set** | **not set** |
+| `blacklist` | Hide specific models from the model picker | **not set** | **not set** | set — non-chat model IDs by default; see §4 | **not set** |
+| `models` | Per-model config overrides | set (see §2) | set dynamically via `provider.models` hook | set statically in JSONC | fetched from `/public/model_hub` + `/v1/model/info` |
 
 ¹ yuseferi's `LiteLLMPlugin` and `LiteLLMResponsesPlugin` use the `provider.models` hook — the provider shell (`npm`, `name`, `options.*`) must be declared by the user in their own `opencode.json`. The plugin only populates the `models` map.
 
@@ -47,7 +48,7 @@ input.model.providerID.toLowerCase().includes("litellm")
 input.model.api.id.toLowerCase().includes("litellm")
 ```
 
-BlakeHastings and yuseferi rely on the `providerID` heuristic (`"litellm"` / `"litellm-responses"`) instead of setting the flag. playground-gen uses the explicit `litellmProxy: true` option, which works with **any** provider key name.
+BlakeHastings and yuseferi rely on the `providerID` heuristic (`"litellm"` / `"litellm-responses"`) instead of setting the flag. playground-gen and oclitellmac-server use the explicit `litellmProxy: true` option, which works with **any** provider key name.
 
 ---
 
@@ -67,35 +68,35 @@ The yuseferi plugin builds `Provider.Model` objects directly (see `build-model.t
 
 Source: `config/provider.ts` L5–69.
 
-| Field | Runtime effect | BlakeHastings | yuseferi¹ | playground-gen |
-|---|---|---|---|---|
-| `id` | Model identifier sent to the API | **not set** | set to LiteLLM model id | set to `model_group` |
-| `name` | Display name in model picker | set to LiteLLM model id | set via `formatModelName()` | set to `model_group` |
-| `family` | Model family grouping | **not set** | **not set** | **not set** |
-| `release_date` | Used by `transform.ts` for reasoning-effort date gating | **not set** | `""` (hardcoded) | **not set** |
-| `tool_call` | `transform.ts`: controls whether tools are offered | **not set** | set (`supports_function_calling`) | set when truthy |
-| `attachment` | `transform.ts` `unsupportedParts`: gates image/file pass-through | **not set** | set (`supports_vision`) | set when truthy |
-| `reasoning` | `transform.ts` `variants()`: enables reasoning-effort variants; `options()`: enables thinking config | **not set** | `false` (hardcoded) | set when truthy |
-| `temperature` | `llm.ts` L171: gates whether temperature is sent to the API | **not set** | `true` (hardcoded) | `true` always |
-| `interleaved` | `transform.ts` `normalizeMessages()` L306–337: routes reasoning text to provider-specific field | **not set** | **not set** | **not set** |
-| `cost.input` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info |
-| `cost.output` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info |
-| `cost.cache_read` | Cache read cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` |
-| `cost.cache_write` | Cache write cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` |
-| `cost.context_over_200k.input` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) |
-| `cost.context_over_200k.output` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) |
-| `limit.context` | Context window; compaction trigger | **not set** | set (`max_input_tokens ?? 0`) | set from hub or model/info |
-| `limit.input` | Input token limit | **not set** | set (`max_input_tokens`) | set (same as context) |
-| `limit.output` | `transform.ts` `maxOutputTokens()` L1281: caps output tokens per request; `variants()` L858–866: Anthropic thinking budget | **not set** | set (`max_output_tokens ?? 0`) | set from hub or model/info |
-| `modalities.input` | `transform.ts` `unsupportedParts()` L393–428: substitutes error text for unsupported file types | **not set** | **not set**² | set (`text` always; `image`/`audio`/`pdf` from capability flags) |
-| `modalities.output` | (informational) | **not set** | **not set**² | set (`text` always; `audio` from model/info) |
-| `experimental` | (reserved for future use) | **not set** | **not set** | **not set** |
-| `status` | UI badge (alpha/beta/deprecated) | **not set** | **not set** | **not set** |
-| `options` | Per-model provider options bag | **not set** | `{}` (hardcoded) | **not set** |
-| `headers` | Per-model custom HTTP headers | **not set** | `{}` (hardcoded) | **not set** |
-| `variants` | Reasoning-effort variants (low/medium/high/…) | **not set** | **not set** | **not set** |
-| `provider.npm` | Override AI SDK package per model | **not set** | **not set** | **not set** |
-| `provider.api` | Override API URL per model | **not set** | **not set** | **not set** |
+| Field | Runtime effect | BlakeHastings | yuseferi¹ | playground-gen | oclitellmac-server |
+|---|---|---|---|---|---|
+| `id` | Model identifier sent to the API | **not set** | set to LiteLLM model id | set to `model_group` | set to `model_group` |
+| `name` | Display name in model picker | set to LiteLLM model id | set via `formatModelName()` | set to `model_group` | set to `model_group` |
+| `family` | Model family grouping | **not set** | **not set** | **not set** | **not set** |
+| `release_date` | Used by `transform.ts` for reasoning-effort date gating | **not set** | `""` (hardcoded) | **not set** | **not set** |
+| `tool_call` | `transform.ts`: controls whether tools are offered | **not set** | set (`supports_function_calling`) | set when truthy | set when truthy (hub or info) |
+| `attachment` | `transform.ts` `unsupportedParts`: gates image/file pass-through | **not set** | set (`supports_vision`) | set when truthy | set when truthy (hub or info) |
+| `reasoning` | `transform.ts` `variants()`: enables reasoning-effort variants; `options()`: enables thinking config | **not set** | `false` (hardcoded) | set when truthy | set when truthy (hub or info) |
+| `temperature` | `llm.ts` L171: gates whether temperature is sent to the API | **not set** | `true` (hardcoded) | `true` always | `true` always |
+| `interleaved` | `transform.ts` `normalizeMessages()` L306–337: routes reasoning text to provider-specific field | **not set** | **not set** | **not set** | **not set** |
+| `cost.input` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info | set from hub or model/info |
+| `cost.output` | Cost display; token-spend tracking | **not set** | `0` (hardcoded) | set from hub or model/info | set from hub or model/info |
+| `cost.cache_read` | Cache read cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` | set from `/v1/model/info` |
+| `cost.cache_write` | Cache write cost display | **not set** | **not set** | set from `/v1/model/info` if `--bearer` | set from `/v1/model/info` |
+| `cost.context_over_200k.input` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) | set from model/info (`above_128k`) or hub (`above_200k`) |
+| `cost.context_over_200k.output` | Extended-context tier cost display | **not set** | **not set** | set from model/info (`above_128k`) or hub (`above_200k`) | set from model/info (`above_128k`) or hub (`above_200k`) |
+| `limit.context` | Context window; compaction trigger | **not set** | set (`max_input_tokens ?? 0`) | set from hub or model/info | set from hub or model/info |
+| `limit.input` | Input token limit | **not set** | set (`max_input_tokens`) | set (same as context) | set (same as context) |
+| `limit.output` | `transform.ts` `maxOutputTokens()` L1281: caps output tokens per request; `variants()` L858–866: Anthropic thinking budget | **not set** | set (`max_output_tokens ?? 0`) | set from hub or model/info | set from hub or model/info |
+| `modalities.input` | `transform.ts` `unsupportedParts()` L393–428: substitutes error text for unsupported file types | **not set** | **not set**² | set (`text` always; `image`/`audio`/`pdf` from capability flags) | set (`text` always; `image`/`audio`/`pdf` from info) |
+| `modalities.output` | (informational) | **not set** | **not set**² | set (`text` always; `audio` from model/info) | set (`text` always; `audio` from info) |
+| `experimental` | (reserved for future use) | **not set** | **not set** | **not set** | **not set** |
+| `status` | UI badge (alpha/beta/deprecated) | **not set** | **not set** | **not set** | **not set** |
+| `options` | Per-model provider options bag | **not set** | `{}` (hardcoded) | **not set** | **not set** |
+| `headers` | Per-model custom HTTP headers | **not set** | `{}` (hardcoded) | **not set** | **not set** |
+| `variants` | Reasoning-effort variants (low/medium/high/…) | **not set** | **not set** | **not set** | **not set** |
+| `provider.npm` | Override AI SDK package per model | **not set** | **not set** | **not set** | **not set** |
+| `provider.api` | Override API URL per model | **not set** | **not set** | **not set** | **not set** |
 
 ¹ yuseferi writes `Provider.Model` (the V2 runtime type) — not `ModelConfig`. The fields listed above are the `Provider.Model` equivalents. yuseferi's `capabilities` sub-object is in the **runtime** shape, not the config-file shape, and OpenCode accepts it because the plugin returns it via the `provider.models` hook directly into the runtime model registry.
 
@@ -323,4 +324,54 @@ Exact locations in the OpenCode source where each field is read and what effect 
 
 ---
 
-*Sources verified directly from: `packages/opencode/src/config/provider.ts`, `src/provider/models.ts`, `src/provider/transform.ts`, `src/session/llm.ts` (OpenCode `dev` branch, `repos/opencode/`); `repos/opencode-litellm@BlakeHastings/src/index.ts`; `repos/opencode-litellm@yuseferi/src/plugin/build-model.ts`, `discover.ts`, `index.ts`, `utils/`; `tools/config-generator/src/generate.py`.*
+## 5. oclitellmac-server Plugin
+
+**Location**: `plugins/oclitellmac-server/`
+
+**Approach**: Multi-endpoint auto-configuration via `config` hook. Reads configuration from `~/.config/oclitellmac/server.json`, fetches models from multiple LiteLLM proxies, and injects all providers dynamically at runtime.
+
+### Key Features
+
+1. **Multiple endpoints**: Single plugin handles N LiteLLM proxies, each becoming a separate OpenCode provider
+2. **Config-driven**: All settings (baseUrl, apiKey, providerName, providerKey) in external `server.json`
+3. **Auto-discovery**: Fetches models from `/public/model_hub` + `/v1/model/info` on startup
+4. **Smart caching**: Caches provider data to `~/.local/state/oclitellmac/providers/`, falls back on network failure
+5. **Budget tracking**: Polls `/key/info` every 60s + after each message, stores to `~/.local/state/oclitellmac/key-info/`
+6. **Direct auth injection**: Embeds `apiKey` directly in `options.apiKey` (no OpenCode auth store needed)
+7. **BlakeHastings pattern**: Uses `config` hook to directly mutate `config.provider` object
+
+### Implementation Details
+
+- **Provider injection**: Via `config` hook at `src/index.ts:86-133`
+- **Model building**: Adapted from `playground-gen` logic at `src/provider.ts`
+- **Budget tracking**: `src/budget.ts` with periodic polling + `chat.message` hook trigger
+- **State management**: `src/state.ts` with file locking to prevent write collisions
+- **Field mapping**: Same as `playground-gen` (hub + info → model config)
+
+### Differences from Other Implementations
+
+| Aspect | oclitellmac-server |
+|---|---|
+| **Configuration** | External `server.json` (not `opencode.json`) |
+| **Providers** | Multiple providers per plugin (vs. one) |
+| **Auth storage** | Direct injection via `options.apiKey` (not auth.json) |
+| **Model discovery** | Same endpoints as playground-gen (`/public/model_hub` + `/v1/model/info`) |
+| **Caching** | File-based with fallback (playground-gen has none) |
+| **Budget tracking** | Continuous polling + event-based (unique feature) |
+| **Restart required** | Yes (for config changes) |
+
+### Companion: oclitellmac-tui
+
+**Location**: `plugins/oclitellmac-tui/`
+
+**Purpose**: TUI plugin that displays budget data in OpenCode sidebar by reading files from `~/.local/state/oclitellmac/key-info/`.
+
+**Features**:
+- File watcher (`fs.watch()` + polling fallback) for instant updates
+- Color-coded budget alerts (green/yellow/red)
+- Multiple provider display in sidebar
+- Zero network calls (pure file-based)
+
+---
+
+*Sources verified directly from: `packages/opencode/src/config/provider.ts`, `src/provider/models.ts`, `src/provider/transform.ts`, `src/session/llm.ts` (OpenCode `dev` branch, `repos/opencode/`); `repos/opencode-litellm@BlakeHastings/src/index.ts`; `repos/opencode-litellm@yuseferi/src/plugin/build-model.ts`, `discover.ts`, `index.ts`, `utils/`; `tools/config-generator/src/generate.py`; `plugins/oclitellmac-server/src/`, `plugins/oclitellmac-tui/src/`.*

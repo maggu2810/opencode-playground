@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Example configuration for oclitellmac-server plugin",
+  "endpoints": [
+    {
+      "providerKey": "litellm-prod",
+      "baseUrl": "https://your-litellm-proxy.example.com",
+      "apiKey": "sk-your-api-key-here",
+      "comment": "Production LiteLLM proxy endpoint"
+    },
+    {
+      "providerKey": "litellm-staging",
+      "baseUrl": "https://staging-litellm.example.com",
+      "apiKey": "sk-staging-key-here",
+      "comment": "Staging environment for testing"
+    }
+  ],
+  "options": {
+    "fallbackToCache": true,
+    "timeout": 10000,
+    "budgetPollInterval": 60000
+  },
+  "_comments": {
+    "providerKey": "Unique identifier for this provider (used as ID, auto-formatted to display name)",
+    "baseUrl": "LiteLLM proxy base URL (without /v1 path)",
+    "apiKey": "Your LiteLLM API key (stored in plain text - ensure file permissions are restrictive)",
+    "providerName": "OPTIONAL: Custom display name (if omitted, auto-formats providerKey: 'litellm-prod' → 'Litellm Prod')",
+    "enabled": "OPTIONAL: Set to false to temporarily disable this endpoint (default: true)",
+    "fallbackToCache": "If true, use cached model/budget data when endpoint is unreachable (default: true)",
+    "timeout": "Request timeout in milliseconds (default: 30ms, example shows 10000ms)",
+    "budgetPollInterval": "How often to poll budget data in milliseconds (default: 60ms, example shows 60000ms = 1 minute)"
+  },
+  "_installation": {
+    "1": "Copy this file to: ~/.config/oclitellmac/server.json",
+    "2": "Replace placeholder values with your actual LiteLLM endpoint details",
+    "3": "Ensure file permissions: chmod 600 ~/.config/oclitellmac/server.json",
+    "4": "Install the plugin: opencode plugin add /path/to/plugins/oclitellmac-server",
+    "5": "Restart OpenCode to load the configuration"
+  },
+  "_example_with_optional_fields": {
+    "endpoints": [
+      {
+        "providerKey": "litellm-prod",
+        "baseUrl": "https://your-litellm-proxy.example.com",
+        "apiKey": "sk-your-api-key-here",
+        "providerName": "Production LiteLLM",
+        "enabled": true
+      }
+    ]
+  }
+}

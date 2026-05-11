@@ -1,0 +1,25 @@
+{
+  "name": "oclitellmac-server",
+  "version": "1.0.0",
+  "description": "OpenCode LiteLLM Auto-Config - Automatically configure multiple LiteLLM proxies",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "litellm",
+    "auto-config"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "latest",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

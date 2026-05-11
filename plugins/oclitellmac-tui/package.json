@@ -1,0 +1,34 @@
+{
+  "name": "oclitellmac-tui",
+  "version": "1.0.0",
+  "description": "OpenCode LiteLLM Auto-Config TUI - Display budget information in sidebar",
+  "type": "module",
+  "main": "./src/index.tsx",
+  "exports": {
+    "./tui": {
+      "import": "./src/index.tsx"
+    }
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "tui",
+    "litellm",
+    "budget"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@opencode-ai/sdk": "latest"
+  },
+  "peerDependencies": {
+    "@opentui/core": "*",
+    "@opentui/keymap": "*",
+    "@opentui/solid": "*",
+    "solid-js": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
