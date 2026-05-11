@@ -2,19 +2,21 @@
   "name": "tui-playground-v1",
   "version": "1.0.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./src/index.tsx",
+  "exports": {
+    "./tui": {
+      "import": "./src/index.tsx"
+    }
+  },
   "dependencies": {
     "@opencode-ai/plugin": "*",
-    "@opencode-ai/sdk": "*",
-    "@opentui/core": ">=0.2.6",
-    "@opentui/keymap": ">=0.2.6",
-    "@opentui/solid": ">=0.2.6",
-    "solid-js": "*"
+    "@opencode-ai/sdk": "*"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.2.6",
     "@opentui/keymap": ">=0.2.6",
-    "@opentui/solid": ">=0.2.6"
+    "@opentui/solid": ">=0.2.6",
+    "solid-js": "*"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

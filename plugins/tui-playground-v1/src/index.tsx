@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { createMemo } from "solid-js"
-import type { TuiPluginModule, TuiSlotContext } from "@opencode-ai/plugin"
+import type { TuiPluginModule, TuiSlotContext } from "@opencode-ai/plugin/tui"
 import type { Provider, Model } from "@opencode-ai/sdk/v2"
 
 type ProviderDisplayInfo = {
@@ -75,7 +75,7 @@ function ProviderCard(props: { ctx: TuiSlotContext; provider: ProviderDisplayInf
       gap={1}
       padding={1}
       marginBottom={1}
-      borderStyle="round"
+      borderStyle="rounded"
       borderColor={theme().border}
     >
       <text fg={theme().text}>
@@ -147,8 +147,7 @@ function ProviderCard(props: { ctx: TuiSlotContext; provider: ProviderDisplayInf
 export const plugin: TuiPluginModule = {
   id: "tui-playground-v1",
   tui: async (api, _options, _meta) => {
-    const dispose = api.slots.register({
-      id: "tui-playground-v1-sidebar",
+    api.slots.register({
       order: 100,
       slots: {
         sidebar_content: (ctx, _props) => {
@@ -159,7 +158,7 @@ export const plugin: TuiPluginModule = {
           return (
             <box flexDirection="column" gap={1}>
               <text fg={ctx.theme.current.text}>
-                <b size={2}>Provider Info</b>
+                <b>Provider Info</b>
               </text>
 
               {providers().length === 0 ? (
@@ -174,8 +173,6 @@ export const plugin: TuiPluginModule = {
         },
       },
     })
-
-    api.lifecycle.onDispose(dispose)
   },
 }
 
