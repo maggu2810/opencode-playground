@@ -1,7 +1,9 @@
 import type { PluginInput, Hooks } from "@opencode-ai/plugin"
 import { loadConfig, getConfigPath } from "./config"
-import { LiteLLMClient } from "./fetcher"
-import { buildModels } from "./provider"
+import { LiteLLMClient } from "./fetch"
+import { transformModels } from "./transform"
+import { buildBlacklist } from "./filter"
+import { NON_CHAT_CATEGORIES, CATEGORY_LABEL, type Category } from "./categorize"
 import { StateManager } from "./state"
 import { BudgetTracker } from "./budget"
 
@@ -78,6 +80,7 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
         clientMap.set(endpoint.providerKey, client)
         
         let models: Record<string, any> = {}
+        let categories: Map<string, Category> = new Map()
         let usedCache = false
         
         try {
@@ -88,7 +91,10 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
             client.fetchModelInfo(),
           ])
           
-          models = buildModels(hubEntries, infoMap, endpoint.providerKey)
+          // Transform using new modular pipeline
+          const result = transformModels(hubEntries, infoMap)
+          models = result.models
+          categories = result.categories
           
           // Cache the fetched data
           await stateManager.saveProviderCache(endpoint.providerKey, {
@@ -96,6 +102,7 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
             baseUrl: endpoint.baseUrl,
             fetchedAt: Date.now(),
             models,
+            categories: Object.fromEntries(categories),
           })
           
           log(`Loaded ${Object.keys(models).length} models for ${endpoint.providerKey}`)
@@ -111,6 +118,10 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
             const cached = await stateManager.loadProviderCache(endpoint.providerKey)
             if (cached && cached.models) {
               models = cached.models
+              // Restore categories from cache
+              if (cached.categories) {
+                categories = new Map(Object.entries(cached.categories))
+              }
               usedCache = true
               cacheCount++
               log(
@@ -125,10 +136,15 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
           }
         }
         
+        // Build blacklist for non-chat models (TODO: make configurable via enabledCategories)
+        const enabledCategories = new Set<Category>() // Empty = only chat models enabled
+        const blacklist = buildBlacklist(categories, enabledCategories)
+        
         // Inject provider into OpenCode config
-        opcodeConfig.provider[endpoint.providerKey] = {
+        const providerConfig: any = {
           npm: "@ai-sdk/openai-compatible",
           name: endpoint.providerName ?? formatProviderName(endpoint.providerKey),
+          key: endpoint.apiKey, // Add key field for TUI compatibility
           options: {
             baseURL: `${endpoint.baseUrl.replace(/\/v1\/?$/, "").replace(/\/$/, "")}/v1`,
             apiKey: endpoint.apiKey,
@@ -136,6 +152,14 @@ export default async function plugin(input: PluginInput): Promise<Hooks> {
           },
           models,
         }
+        
+        // Add blacklist if non-empty
+        if (blacklist.length > 0) {
+          providerConfig.blacklist = blacklist.map(([modelId]) => modelId)
+          log(`Blacklisted ${blacklist.length} non-chat models for ${endpoint.providerKey}`)
+        }
+        
+        opcodeConfig.provider[endpoint.providerKey] = providerConfig
         
         // Start budget tracking
         budgetTracker.startTracking(endpoint.providerKey, client)

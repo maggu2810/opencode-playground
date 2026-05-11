@@ -41,7 +41,7 @@ function transformProvider(provider: Provider): ProviderDisplayInfo {
     id: provider.id,
     name: provider.name,
     source: provider.source,
-    hasApiKey: !!provider.key,
+    hasApiKey: !!(provider.options?.apiKey || provider.key),
     envVars: provider.env,
     modelCount: Object.keys(provider.models).length,
     models: models.map((m: Model) => ({

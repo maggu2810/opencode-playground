@@ -1,5 +1,5 @@
 import type { EndpointConfig } from "./config"
-import { LiteLLMClient } from "./fetcher"
+import { LiteLLMClient } from "./fetch"
 import { StateManager } from "./state"
 
 /**
