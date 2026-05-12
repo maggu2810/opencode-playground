@@ -8,3 +8,6 @@
 [submodule "repos/opencode-litellm@yuseferi"]
 	path = repos/opencode-litellm@yuseferi
 	url = https://github.com/yuseferi/opencode-litellm.git
+[submodule "plugins/oclitellmac"]
+	path = plugins/oclitellmac
+	url = git@github.com:maggu2810/oclitellmac
