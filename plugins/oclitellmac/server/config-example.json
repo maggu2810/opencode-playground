@@ -33,12 +33,14 @@
     "budgetPollInterval": "How often to poll budget data in milliseconds (default: 60ms, example shows 60000ms = 1 minute)"
   },
   "_installation": {
-    "1": "Copy this file to: ~/.config/oclitellmac/server.json",
-    "2": "Replace placeholder values with your actual LiteLLM endpoint details",
-    "3": "Ensure file permissions: chmod 600 ~/.config/oclitellmac/server.json",
-    "4": "Install the plugin: opencode plugin add /path/to/plugins/oclitellmac",
-    "5": "Add to opencode.json: {\"plugin\": [\"oclitellmac/server\", \"oclitellmac/tui\"]}",
-    "6": "Restart OpenCode to load the configuration"
+    "1": "Copy this file to: ~/.config/oclitellmac/server.json (Linux/macOS) or %USERPROFILE%\\.config\\oclitellmac\\server.json (Windows)",
+    "2": "NOTE: Plugin uses XDG Base Directory paths. On Linux, you can override with: export XDG_CONFIG_HOME=\"$HOME/my-config\"",
+    "3": "Replace placeholder values with your actual LiteLLM endpoint details",
+    "4": "Ensure file permissions: chmod 600 ~/.config/oclitellmac/server.json (Linux/macOS)",
+    "5": "Install the plugin: opencode plugin add /path/to/plugins/oclitellmac",
+    "6": "Add to opencode.json: {\"plugin\": [\"oclitellmac/server\", \"oclitellmac/tui\"]}",
+    "7": "Restart OpenCode to load the configuration",
+    "8": "See PATH-STRATEGY.md for detailed path management information"
   },
   "_example_with_optional_fields": {
     "endpoints": [

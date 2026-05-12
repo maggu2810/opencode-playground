@@ -26,6 +26,19 @@ Edit your `~/.config/opencode/opencode.json` (or project-local `opencode.json`):
 
 Create `~/.config/oclitellmac/server.json`:
 
+**Note**: The plugin uses XDG Base Directory paths. On Linux, you can override the config location with `XDG_CONFIG_HOME`:
+
+```bash
+# Default location
+~/.config/oclitellmac/server.json
+
+# Custom location (Linux only)
+export XDG_CONFIG_HOME="$HOME/my-config"
+# Config will be at: ~/my-config/oclitellmac/server.json
+```
+
+**Configuration content**:
+
 ```json
 {
   "endpoints": [
@@ -60,14 +73,45 @@ See `server/config-example.json` for full configuration options.
 - Fetches model lists from LiteLLM endpoints
 - Injects providers into OpenCode configuration
 - Starts budget tracking (polls every 60s)
-- Writes budget data to `~/.local/state/oclitellmac/key-info/`
+- Writes data to state directory (see Platform-Specific Paths below)
 
 ### TUI Plugin
 - Loads when TUI starts
-- Reads budget files from `~/.local/state/oclitellmac/key-info/`
+- Reads budget files from state directory
 - Displays budget panels in sidebar
 - Updates immediately when budget files change (via file watcher)
 - Shows fetch timestamp in local timezone
+
+### Platform-Specific Paths
+
+**Configuration File** (where you create `server.json`):
+
+| Platform | Default Path | Custom Path (via environment variable) |
+|----------|--------------|----------------------------------------|
+| Linux | `~/.config/oclitellmac/server.json` | `$XDG_CONFIG_HOME/oclitellmac/server.json` |
+| macOS | `~/.config/oclitellmac/server.json` | N/A (XDG vars not used) |
+| Windows | `C:\Users\<username>\.config\oclitellmac\server.json` | N/A (XDG vars not used) |
+
+**State Directory** (where plugins write budget/provider data):
+
+| Platform | Default Path | Custom Path (via environment variable) |
+|----------|--------------|----------------------------------------|
+| Linux | `~/.local/state/oclitellmac/` | `$XDG_STATE_HOME/oclitellmac/` |
+| macOS | `~/.local/state/oclitellmac/` | N/A (XDG vars not used) |
+| Windows | `C:\Users\<username>\.local\state\oclitellmac\` | N/A (XDG vars not used) |
+
+**Linux Custom Paths Example**:
+```bash
+# Override default XDG directories
+export XDG_CONFIG_HOME="$HOME/my-config"
+export XDG_STATE_HOME="$HOME/my-state"
+
+# Plugin will use:
+# - Config: ~/my-config/oclitellmac/server.json
+# - State: ~/my-state/oclitellmac/
+```
+
+**Note**: The plugin uses Unix-style paths (`.config`, `.local/state`) on all platforms for consistency with OpenCode core. See `PATH-STRATEGY.md` for detailed rationale.
 
 ## Verification Steps
 
@@ -91,12 +135,25 @@ In OpenCode, check that your LiteLLM models are available:
 
 ### 3. Verify Budget Tracking
 
+**Linux/macOS**:
 ```bash
-# Check budget files are being created
+# Check budget files are being created (default path)
 ls -lh ~/.local/state/oclitellmac/key-info/
 
 # View budget data
 cat ~/.local/state/oclitellmac/key-info/<provider-key>.json
+
+# If using custom XDG_STATE_HOME (Linux only)
+ls -lh "$XDG_STATE_HOME/oclitellmac/key-info/"
+```
+
+**Windows** (PowerShell):
+```powershell
+# Check budget files
+dir $HOME\.local\state\oclitellmac\key-info\
+
+# View budget data
+cat $HOME\.local\state\oclitellmac\key-info\<provider-key>.json
 ```
 
 Expected structure:
@@ -137,7 +194,7 @@ In OpenCode TUI sidebar, look for:
 ### Server Plugin Not Loading
 
 Check OpenCode logs for:
-- "Failed to load config" → Create `~/.config/oclitellmac/server.json`
+- "Failed to load config" → Create config file at platform-specific path (see Platform-Specific Paths above)
 - "Failed to fetch models" → Check endpoint URL and API key
 - Connection timeouts → Increase `timeout` in config
 
@@ -146,7 +203,8 @@ Check OpenCode logs for:
 Possible causes:
 - Server plugin not running → Check plugin configuration
 - No budget files created → Check server logs for errors
-- Budget files invalid → Check file format with `cat ~/.local/state/.../key-info/*.json`
+- Budget files invalid → Check file format (see Verify Budget Tracking above)
+- Wrong state directory → Check platform-specific path (see Platform-Specific Paths above)
 
 ### Models Not Appearing
 

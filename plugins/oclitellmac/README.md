@@ -191,10 +191,18 @@ Shows **all** models in the picker.
 
 **Note**: Chat models are **always enabled** regardless of category settings.
 
-## State Storage
+## Path Management
 
-The server plugin stores cached data in `~/.local/state/oclitellmac/`:
+The plugin uses the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) for organizing user data. This provides XDG compliance on Linux while maintaining consistent paths across all platforms.
 
+### Default Paths
+
+**Configuration** (server plugin):
+```
+~/.config/oclitellmac/server.json
+```
+
+**State Data** (provider cache and budget data):
 ```
 ~/.local/state/oclitellmac/
 ├── providers/          # Cached provider & model data
@@ -204,6 +212,47 @@ The server plugin stores cached data in `~/.local/state/oclitellmac/`:
     ├── litellm-prod.json
     └── litellm-dev.json
 ```
+
+### Platform-Specific Paths
+
+**Linux (Default)**:
+- Config: `~/.config/oclitellmac/server.json`
+- State: `~/.local/state/oclitellmac/`
+
+**Linux (Custom XDG Variables)**:
+```bash
+export XDG_CONFIG_HOME="$HOME/my-config"
+export XDG_STATE_HOME="$HOME/my-state"
+```
+- Config: `~/my-config/oclitellmac/server.json`
+- State: `~/my-state/oclitellmac/`
+
+**macOS** (Unix-style paths):
+- Config: `~/.config/oclitellmac/server.json`
+- State: `~/.local/state/oclitellmac/`
+
+**Windows** (Unix-style paths):
+- Config: `C:\Users\username\.config\oclitellmac\server.json`
+- State: `C:\Users\username\.local\state\oclitellmac\`
+
+### XDG Environment Variables
+
+The plugin respects these environment variables on Linux:
+
+- **`XDG_CONFIG_HOME`**: Override config directory (default: `~/.config`)
+- **`XDG_STATE_HOME`**: Override state directory (default: `~/.local/state`)
+
+**Note**: These environment variables are only meaningful on Linux. On macOS and Windows, the plugin uses the default Unix-style paths (matching OpenCode core behavior).
+
+### Why Unix-Style Paths Everywhere?
+
+The plugin uses Unix-style paths (`.config`, `.local/state`) on all platforms to:
+- ✅ Maintain consistency with OpenCode core
+- ✅ Provide XDG compliance on Linux
+- ✅ Simplify documentation (same paths everywhere)
+- ✅ Allow easy path overrides via environment variables (Linux)
+
+See `PATH-STRATEGY.md` for detailed rationale and alternative approaches considered.
 
 ### Budget Data Format
 

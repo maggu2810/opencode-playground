@@ -1,7 +1,6 @@
 import { z } from "zod"
 import { readFile } from "fs/promises"
-import { homedir } from "os"
-import path from "path"
+import { getConfigPath } from "./paths.js"
 import type { Category } from "./categorize"
 
 // Valid non-chat category names
@@ -44,7 +43,7 @@ export type EndpointConfig = z.infer<typeof EndpointConfigSchema>
  * Load server configuration from ~/.config/oclitellmac/server.json
  */
 export async function loadConfig(): Promise<ServerConfig> {
-  const configPath = path.join(homedir(), ".config", "oclitellmac", "server.json")
+  const configPath = getConfigPath()
   
   try {
     const content = await readFile(configPath, "utf-8")
@@ -58,8 +57,7 @@ export async function loadConfig(): Promise<ServerConfig> {
 }
 
 /**
- * Get default configuration path
+ * Export getConfigPath from paths module for convenience
+ * (Re-exported to maintain backward compatibility if used elsewhere)
  */
-export function getConfigPath(): string {
-  return path.join(homedir(), ".config", "oclitellmac", "server.json")
-}
+export { getConfigPath } from "./paths.js"

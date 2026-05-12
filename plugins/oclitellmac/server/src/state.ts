@@ -1,24 +1,26 @@
 import { mkdir, readFile, writeFile } from "fs/promises"
-import { homedir } from "os"
 import path from "path"
+import { getProviderCacheDir, getBudgetDataDir } from "./paths.js"
 
 /**
  * State manager with file locking to prevent concurrent write collisions
  */
 export class StateManager {
-  private stateDir: string
+  private providerCacheDir: string
+  private budgetDataDir: string
   private locks = new Map<string, Promise<void>>()
   
   constructor() {
-    this.stateDir = path.join(homedir(), ".local", "state", "oclitellmac")
+    this.providerCacheDir = getProviderCacheDir()
+    this.budgetDataDir = getBudgetDataDir()
   }
   
   /**
    * Ensure state directories exist
    */
   async ensureDirectories(): Promise<void> {
-    await mkdir(path.join(this.stateDir, "providers"), { recursive: true })
-    await mkdir(path.join(this.stateDir, "key-info"), { recursive: true })
+    await mkdir(this.providerCacheDir, { recursive: true })
+    await mkdir(this.budgetDataDir, { recursive: true })
   }
   
   /**
@@ -51,7 +53,7 @@ export class StateManager {
    */
   async saveProviderCache(providerKey: string, data: any): Promise<void> {
     return this.withLock(`provider:${providerKey}`, async () => {
-      const filePath = path.join(this.stateDir, "providers", `${providerKey}.json`)
+      const filePath = path.join(this.providerCacheDir, `${providerKey}.json`)
       const content = JSON.stringify(data, null, 2)
       await writeFile(filePath, content, "utf-8")
     })
@@ -61,7 +63,7 @@ export class StateManager {
    * Load provider cache
    */
   async loadProviderCache(providerKey: string): Promise<any | null> {
-    const filePath = path.join(this.stateDir, "providers", `${providerKey}.json`)
+    const filePath = path.join(this.providerCacheDir, `${providerKey}.json`)
     try {
       const content = await readFile(filePath, "utf-8")
       return JSON.parse(content)
@@ -75,7 +77,7 @@ export class StateManager {
    */
   async saveBudgetData(providerKey: string, data: any): Promise<void> {
     return this.withLock(`budget:${providerKey}`, async () => {
-      const filePath = path.join(this.stateDir, "key-info", `${providerKey}.json`)
+      const filePath = path.join(this.budgetDataDir, `${providerKey}.json`)
       const content = JSON.stringify(data, null, 2)
       await writeFile(filePath, content, "utf-8")
     })
@@ -85,7 +87,7 @@ export class StateManager {
    * Load budget data
    */
   async loadBudgetData(providerKey: string): Promise<any | null> {
-    const filePath = path.join(this.stateDir, "key-info", `${providerKey}.json`)
+    const filePath = path.join(this.budgetDataDir, `${providerKey}.json`)
     try {
       const content = await readFile(filePath, "utf-8")
       return JSON.parse(content)
@@ -95,9 +97,16 @@ export class StateManager {
   }
   
   /**
-   * Get state directory path
+   * Get provider cache directory path
    */
-  getStateDir(): string {
-    return this.stateDir
+  getProviderCacheDir(): string {
+    return this.providerCacheDir
+  }
+  
+  /**
+   * Get budget data directory path
+   */
+  getBudgetDataDir(): string {
+    return this.budgetDataDir
   }
 }

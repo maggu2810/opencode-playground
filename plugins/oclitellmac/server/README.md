@@ -29,6 +29,7 @@ The server plugin automatically discovers and configures LiteLLM proxy endpoints
 ```
 plugins/oclitellmac/server/src/
 ├── index.ts           # Plugin entry, config/chat.message hooks
+├── paths.ts           # Path management (xdg-basedir wrapper)
 ├── config.ts          # Zod schemas, config loading
 ├── fetch.ts           # HTTP client for LiteLLM endpoints
 ├── categorize.ts      # Model category detection (chat/embedding/TTS/etc.)
@@ -41,6 +42,24 @@ plugins/oclitellmac/server/src/
 ```
 
 ### Module Responsibilities
+
+#### `paths.ts` - Path Management
+- Centralized path management using `xdg-basedir` library
+- Exports base directories and specific subdirectory functions
+- XDG-compliant on Linux (respects `XDG_CONFIG_HOME`, `XDG_STATE_HOME`)
+- Uses Unix-style paths on all platforms (consistent with OpenCode core)
+
+**Exported Functions**:
+- `getConfigPath()`: Returns `~/.config/oclitellmac/server.json`
+- `getProviderCacheDir()`: Returns `~/.local/state/oclitellmac/providers`
+- `getBudgetDataDir()`: Returns `~/.local/state/oclitellmac/key-info`
+- `getConfigDir()`, `getStateDir()`: Base directory getters with validation
+
+**Platform Behavior**:
+- Linux: Respects `XDG_*` environment variables (default: `~/.config`, `~/.local/state`)
+- macOS/Windows: Uses Unix-style paths (`~/.config`, `~/.local/state`)
+
+See `../PATH-STRATEGY.md` for detailed rationale and alternative approaches considered.
 
 #### `index.ts` - Plugin Orchestration
 - Loads configuration from `~/.config/oclitellmac/server.json`
@@ -154,10 +173,9 @@ hubEntries + infoMap
   - `loadProviderCache(providerKey)`: Read cached provider data
   - `saveBudgetData(providerKey, data)`: Write budget data with file locking
   - `loadBudgetData(providerKey)`: Read cached budget data
+  - `getProviderCacheDir()`, `getBudgetDataDir()`: Path getters (delegate to `paths.ts`)
 - Uses `fs.promises` with exclusive locking to prevent write collisions
-- Directories:
-  - `~/.local/state/oclitellmac/providers/`: Provider/model cache
-  - `~/.local/state/oclitellmac/key-info/`: Budget data (consumed by TUI plugin)
+- Paths obtained via `paths.ts` module (XDG-compliant)
 
 **Locking Strategy**: Promise serialization via `Map<key, Promise>` - no external lock files needed
 

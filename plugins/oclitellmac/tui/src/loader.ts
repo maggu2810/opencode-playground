@@ -1,37 +1,36 @@
 import { readdir, readFile } from 'fs/promises'
-import { homedir } from 'os'
 import path from 'path'
+import { getBudgetDataDir } from './paths.js'
 import type { KeyInfoFile, ProviderBudget, BudgetData } from './types'
 
 /**
  * Budget data loader - reads budget files from ~/.local/state/oclitellmac/key-info/
  */
 export class BudgetLoader {
-  private stateDir: string
+  private budgetDataDir: string
   private log: (level: 'info' | 'error' | 'warn', message: string) => void
 
   constructor(log: (level: 'info' | 'error' | 'warn', message: string) => void) {
     this.log = log
-    this.stateDir = path.join(homedir(), '.local', 'state', 'oclitellmac')
+    this.budgetDataDir = getBudgetDataDir()
   }
 
   /**
-   * Get the state directory path
+   * Get the budget data directory path
    */
-  getStateDir(): string {
-    return this.stateDir
+  getBudgetDataDir(): string {
+    return this.budgetDataDir
   }
 
   /**
    * Load all budget files from key-info directory
    */
   async loadAll(): Promise<{ budgets: BudgetData; hasErrors: boolean; errorCount: number }> {
-    const keyInfoDir = path.join(this.stateDir, 'key-info')
     const budgets: BudgetData = {}
     let errorCount = 0
 
     try {
-      const files = await readdir(keyInfoDir)
+      const files = await readdir(this.budgetDataDir)
       const jsonFiles = files.filter(f => f.endsWith('.json'))
 
       for (const file of jsonFiles) {
@@ -61,7 +60,7 @@ export class BudgetLoader {
    * Load budget data for a single provider
    */
   async loadOne(providerKey: string): Promise<ProviderBudget | null> {
-    const filePath = path.join(this.stateDir, 'key-info', `${providerKey}.json`)
+    const filePath = path.join(this.budgetDataDir, `${providerKey}.json`)
 
     try {
       const content = await readFile(filePath, 'utf-8')

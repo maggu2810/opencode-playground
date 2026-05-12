@@ -29,6 +29,7 @@ The TUI plugin displays budget and usage information from LiteLLM proxies in the
 ```
 plugins/oclitellmac/tui/src/
 ├── index.tsx              # Plugin entry point, TUI registration
+├── paths.ts               # Path management (xdg-basedir wrapper)
 ├── types.ts               # TypeScript type definitions
 ├── loader.ts              # File reading & parsing logic
 ├── watcher.ts             # File watching (fs.watch + polling fallback)
@@ -40,6 +41,22 @@ plugins/oclitellmac/tui/src/
 ```
 
 ### Module Responsibilities
+
+#### `paths.ts` - Path Management
+- Centralized path management using `xdg-basedir` library
+- Exports state directory and budget data directory functions
+- XDG-compliant on Linux (respects `XDG_STATE_HOME`)
+- Uses Unix-style paths on all platforms (consistent with OpenCode core)
+
+**Exported Functions**:
+- `getBudgetDataDir()`: Returns `~/.local/state/oclitellmac/key-info`
+- `getStateDir()`: Base directory getter with validation
+
+**Platform Behavior**:
+- Linux: Respects `XDG_STATE_HOME` environment variable (default: `~/.local/state`)
+- macOS/Windows: Uses Unix-style path (`~/.local/state`)
+
+See `../PATH-STRATEGY.md` for detailed rationale and alternative approaches considered.
 
 #### `index.tsx` - Plugin Entry Point
 - Exports default TUI plugin object
@@ -97,28 +114,28 @@ interface BudgetInfo {
 
 **Key Functions**:
 - `BudgetLoader.loadAll()`: Scans directory, reads all budget files
-- `BudgetLoader.loadFile(filePath)`: Reads and parses single file
-- `parseKeyInfoFile(data, filePath)`: Validates and normalizes data
-- `formatProviderName(key)`: Auto-formats provider key (e.g., "litellm-prod" → "Litellm Prod")
+- `BudgetLoader.loadOne(providerKey)`: Reads and parses single file
+- `formatProviderName(key)`: Auto-formats provider key (e.g., "litellm-prod" → "LiteLLM Prod")
+- `getBudgetDataDir()`: Path getter (delegates to `paths.ts`)
 
 **Data Flow**:
 ```
-1. Scan ~/.local/state/oclitellmac/key-info/
+1. Scan ~/.local/state/oclitellmac/key-info/ (via paths.getBudgetDataDir())
    ↓
 2. Read each *.json file
    ↓
 3. Parse and validate structure
    ↓
-4. Normalize to BudgetInfo
+4. Normalize to ProviderBudget
    ↓
-5. Return array of BudgetInfo objects
+5. Return { budgets, hasErrors, errorCount }
 ```
 
 **Error Handling**:
 - Skips invalid files (logs warning)
 - Validates nested structure (`keyInfo.info.*`)
 - Provides fallbacks for missing fields
-- Returns empty array if directory doesn't exist
+- Returns empty budgets object if directory doesn't exist
 
 #### `watcher.ts` - File Watching
 

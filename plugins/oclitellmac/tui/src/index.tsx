@@ -52,7 +52,7 @@ const tui: TuiPlugin = async (api) => {
 
   // Start file watcher for real-time updates
   const watcher = new BudgetWatcher(
-    loader.getStateDir(),
+    loader.getBudgetDataDir(),
     () => {
       // File changed - reload budget data
       refreshBudgets().catch((error) => {

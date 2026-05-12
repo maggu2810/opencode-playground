@@ -24,6 +24,7 @@
   "dependencies": {
     "@opencode-ai/plugin": "latest",
     "@opencode-ai/sdk": "latest",
+    "xdg-basedir": "^5.1.0",
     "zod": "^3.23.0"
   },
   "peerDependencies": {
