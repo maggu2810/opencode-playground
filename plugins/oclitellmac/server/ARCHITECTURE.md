@@ -1,6 +1,7 @@
-# oclitellmac-server Architecture
+# Server Plugin Architecture
 
 **Plugin Type**: Server (v1 plugin API)  
+**Entry Point**: `oclitellmac/server`  
 **Pattern**: Config hook with runtime provider injection  
 **Source**: Adapted from `tools/config-generator` Python tool
 
@@ -8,7 +9,7 @@
 
 ## Overview
 
-The `oclitellmac-server` plugin automatically configures multiple LiteLLM proxy endpoints as OpenCode providers without requiring manual `opencode.json` editing. It uses a modular pipeline architecture shared with the `config-generator` Python tool.
+The server plugin (`oclitellmac/server`) automatically configures multiple LiteLLM proxy endpoints as OpenCode providers without requiring manual `opencode.json` editing. It uses a modular pipeline architecture shared with the `config-generator` Python tool.
 
 ### Key Design Decisions
 
@@ -24,7 +25,7 @@ The `oclitellmac-server` plugin automatically configures multiple LiteLLM proxy 
 ## Module Structure
 
 ```
-plugins/oclitellmac-server/src/
+plugins/oclitellmac/server/src/
 ├── index.ts           # Plugin entry, config/chat.message hooks
 ├── config.ts          # Zod schemas, config loading
 ├── fetch.ts           # HTTP client for LiteLLM endpoints
@@ -319,7 +320,7 @@ See: OpenCode PR #8658, `packages/opencode/src/session/llm.ts` L152-162
 
 ## Comparison with Python Tool
 
-| Aspect | oclitellmac-server (TypeScript) | config-generator (Python) |
+| Aspect | oclitellmac/server (TypeScript) | config-generator (Python) |
 |--------|--------------------------------|---------------------------|
 | **Purpose** | Runtime plugin, multi-endpoint | Static config generator, single endpoint |
 | **Configuration** | `~/.config/oclitellmac/server.json` | CLI flags |
@@ -394,4 +395,4 @@ Both implementations:
 ---
 
 *Last updated: May 2026*  
-*Verified against: `plugins/oclitellmac-server/src/` (restructured modular architecture)*
+*Verified against: `plugins/oclitellmac/server/src/` (restructured modular architecture)*

@@ -1,4 +1,4 @@
-# oclitellmac-server Plugin - Verification Checklist
+# Server Plugin - Verification Checklist
 
 ## ✅ Files Created
 
@@ -6,7 +6,7 @@
 - [x] `tsconfig.json` - TypeScript configuration
 - [x] `README.md` - User documentation
 - [x] `IMPLEMENTATION.md` - Implementation details and summary
-- [x] `server.json.example` - Example configuration file
+- [x] `config-example.json` - Example configuration file
 - [x] `.gitignore` - Git ignore rules
 - [x] `src/index.ts` - Main plugin entry point (5.1 KB)
 - [x] `src/config.ts` - Configuration schema and loader (1.7 KB)
@@ -60,20 +60,27 @@
 
 1. **Install dependencies:**
    ```bash
-   cd /home/de23a4/workspace/kion/de23a4/genai/repos/opencode-playground/plugins/oclitellmac-server
+   cd /path/to/plugins/oclitellmac
    npm install
    ```
 
 2. **Create configuration:**
    ```bash
    mkdir -p ~/.config/oclitellmac
-   cp server.json.example ~/.config/oclitellmac/server.json
+   cp server/config-example.json ~/.config/oclitellmac/server.json
    # Edit with your LiteLLM endpoints
    ```
 
 3. **Add to OpenCode:**
    ```bash
-   opencode plugin add /home/de23a4/workspace/kion/de23a4/genai/repos/opencode-playground/plugins/oclitellmac-server
+   opencode plugin add /path/to/plugins/oclitellmac
+   ```
+   
+   Add to `opencode.json`:
+   ```json
+   {
+     "plugin": ["oclitellmac/server", "oclitellmac/tui"]
+   }
    ```
 
 4. **Restart OpenCode**
@@ -163,7 +170,7 @@ The plugin is working correctly if:
 ## 🎉 Next Steps
 
 Once verified working:
-1. **Create `oclitellmac-tui` plugin** to visualize budget data in OpenCode sidebar
+1. **TUI plugin** (`oclitellmac/tui`) is already included - verify budget display in sidebar
 2. **Add configuration hot-reload** (watch `server.json` for changes)
 3. **Implement retry logic** with exponential backoff
 4. **Add health checks** for endpoint availability monitoring

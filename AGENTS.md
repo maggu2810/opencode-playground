@@ -14,23 +14,15 @@ internal APIs, plugin systems, and TUI components. Working plugin examples are u
 
 ## Plugin Projects
 
-### oclitellmac-server
-Server plugin that automatically configures multiple LiteLLM proxy endpoints as OpenCode providers.
-- **Purpose**: Auto-discovery and configuration of LiteLLM models
+### oclitellmac
+Unified plugin combining server and TUI functionality for LiteLLM integration.
+- **Entry Points**: `oclitellmac/server` (provider injection), `oclitellmac/tui` (sidebar display)
+- **Purpose**: Auto-discovery and configuration of LiteLLM models with budget tracking
 - **Config**: `~/.config/oclitellmac/server.json`
-- **State**: `~/.local/state/oclitellmac/providers/` (model cache)
-- **Budget tracking**: Polls `/key/info` endpoint, stores to `~/.local/state/oclitellmac/key-info/`
-- **Features**: Multiple endpoints, smart caching with fallback, automatic auth injection, category filtering
-- **Architecture**: Modular pipeline (fetch → categorize → map → build → filter → transform)
-- **Docs**: `plugins/oclitellmac-server/README.md`, `ARCHITECTURE.md`
-
-### oclitellmac-tui
-TUI plugin that displays LiteLLM budget information in the OpenCode sidebar.
-- **Purpose**: Visual display of budget/usage data
-- **Data source**: Reads files from `~/.local/state/oclitellmac/key-info/`
-- **Updates**: File watcher (fs.watch) with 5s polling fallback
-- **Requires**: `oclitellmac-server` plugin to generate budget data
-- **Features**: Real-time updates, color-coded alerts, multi-provider display
+- **State**: `~/.local/state/oclitellmac/` (providers cache, budget data)
+- **Features**: Multiple endpoints, smart caching with fallback, automatic auth injection, category filtering, real-time budget display
+- **Architecture**: Modular pipeline (fetch → categorize → map → build → filter → transform); TUI consumes server-generated files (no direct API calls)
+- **Docs**: `plugins/oclitellmac/README.md`, `server/ARCHITECTURE.md`, `server/README.md`, `tui/README.md`
 
 ## Tools
 

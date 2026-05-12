@@ -1,18 +1,18 @@
-# oclitellmac-server Plugin - Implementation Summary
+# Server Plugin - Implementation Summary
 
 ## ✅ Plugin Successfully Created
 
-The `oclitellmac-server` plugin has been fully implemented and is ready for use!
+The server plugin (`oclitellmac/server`) has been fully implemented and is ready for use!
 
 ## 📁 File Structure
 
 ```
-plugins/oclitellmac-server/
+plugins/oclitellmac/server/
 ├── .gitignore
 ├── package.json
 ├── tsconfig.json
 ├── README.md
-├── server.json.example          # Example configuration
+├── config-example.json          # Example configuration
 └── src/
     ├── index.ts                 # Main plugin entry (5.1 KB)
     ├── config.ts                # Configuration loader (1.7 KB)
@@ -27,7 +27,7 @@ plugins/oclitellmac-server/
 ### 1. Install Dependencies
 
 ```bash
-cd /home/de23a4/workspace/kion/de23a4/genai/repos/opencode-playground/plugins/oclitellmac-server
+cd /path/to/plugins/oclitellmac
 npm install
 ```
 
@@ -38,7 +38,7 @@ npm install
 mkdir -p ~/.config/oclitellmac
 
 # Copy example config
-cp server.json.example ~/.config/oclitellmac/server.json
+cp server/config-example.json ~/.config/oclitellmac/server.json
 
 # Edit with your LiteLLM endpoints
 nano ~/.config/oclitellmac/server.json
@@ -67,7 +67,14 @@ nano ~/.config/oclitellmac/server.json
 ### 3. Add Plugin to OpenCode
 
 ```bash
-opencode plugin add /home/de23a4/workspace/kion/de23a4/genai/repos/opencode-playground/plugins/oclitellmac-server
+opencode plugin add /path/to/plugins/oclitellmac
+```
+
+Add to your `opencode.json`:
+```json
+{
+  "plugin": ["oclitellmac/server", "oclitellmac/tui"]
+}
 ```
 
 ### 4. Restart OpenCode
@@ -76,7 +83,7 @@ The plugin will automatically:
 - ✅ Load all enabled endpoints from `~/.config/oclitellmac/server.json`
 - ✅ Fetch models from LiteLLM `/public/model_hub` and `/v1/model/info`
 - ✅ Cache results to `~/.local/state/oclitellmac/providers/`
-- ✅ Inject providers into OpenCode (no `opencode.json` needed!)
+- ✅ Inject providers into OpenCode (no manual `opencode.json` editing needed!)
 - ✅ Start budget tracking (polls `/key/info` every 60 seconds)
 
 ## 🎯 Key Features Implemented
@@ -127,7 +134,7 @@ The plugin will automatically:
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  oclitellmac-server plugin loads                             │
+│  oclitellmac/server plugin loads                             │
 │  1. Reads ~/.config/oclitellmac/server.json                  │
 │  2. For each enabled endpoint:                               │
 │     - Fetches /public/model_hub                              │
@@ -269,7 +276,7 @@ After plugin runs, the following structure is created:
 5. ✅ Verify providers appear in model picker
 
 ### Future Enhancements
-- **oclitellmac-tui** plugin: Visual TUI display of budget data
+- **TUI plugin** (`oclitellmac/tui`): Visual TUI display of budget data (already implemented)
 - Configuration file watcher for hot-reload (no restart needed)
 - Health checks for endpoint availability
 - Retry logic with exponential backoff
@@ -310,7 +317,7 @@ After plugin runs, the following structure is created:
 
 ## 🎉 Success!
 
-The `oclitellmac-server` plugin is now complete and ready for production use!
+The server plugin is now complete and ready for production use!
 
 **Total implementation:**
 - 6 source files

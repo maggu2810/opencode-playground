@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Example configuration for oclitellmac-server plugin",
+  "description": "Example configuration for oclitellmac/server plugin",
   "endpoints": [
     {
       "providerKey": "litellm-prod",
@@ -36,8 +36,9 @@
     "1": "Copy this file to: ~/.config/oclitellmac/server.json",
     "2": "Replace placeholder values with your actual LiteLLM endpoint details",
     "3": "Ensure file permissions: chmod 600 ~/.config/oclitellmac/server.json",
-    "4": "Install the plugin: opencode plugin add /path/to/plugins/oclitellmac-server",
-    "5": "Restart OpenCode to load the configuration"
+    "4": "Install the plugin: opencode plugin add /path/to/plugins/oclitellmac",
+    "5": "Add to opencode.json: {\"plugin\": [\"oclitellmac/server\", \"oclitellmac/tui\"]}",
+    "6": "Restart OpenCode to load the configuration"
   },
   "_example_with_optional_fields": {
     "endpoints": [
