@@ -245,7 +245,7 @@ After both plugins run:
    - Added oclitellmac-server and oclitellmac-tui to "Plugin Projects" section
    - Updated plugin entry path to include `.tsx` for TUI plugins
 
-2. **`/docs/opencode-litellm/plugin-fields.md`** ✅
+2. **`/docs/litellm-integration/field-coverage-comparison.md`** ✅
    - Added oclitellmac-server as fourth implementation column
    - Updated provider-level and model-level field comparison tables
    - Added new section "5. oclitellmac-server Plugin" with details
@@ -402,7 +402,7 @@ All documentation is complete and up-to-date:
 - [oclitellmac-server/VERIFICATION.md](../plugins/oclitellmac-server/VERIFICATION.md) - Testing guide
 - [oclitellmac-tui/README.md](../plugins/oclitellmac-tui/README.md) - User guide
 - [AGENTS.md](../AGENTS.md) - Plugin projects overview
-- [docs/opencode-litellm/plugin-fields.md](../docs/opencode-litellm/plugin-fields.md) - Field coverage comparison
+- [docs/litellm-integration/field-coverage-comparison.md](../docs/litellm-integration/field-coverage-comparison.md) - Field coverage comparison
 
 ---
 

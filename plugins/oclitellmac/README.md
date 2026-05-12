@@ -47,13 +47,40 @@ This separation ensures the TUI has zero network overhead and can display budget
 
 ## Installation
 
-### 1. Install the Plugin
+### Method 1: GitHub URL (Recommended)
+
+Install directly from GitHub repository:
 
 ```bash
-opencode plugin add /path/to/oclitellmac
+# Global installation (available in all projects)
+opencode plugin github:maggu2810/oclitellmac --global
+
+# Project-local installation
+opencode plugin github:maggu2810/oclitellmac
 ```
 
-### 2. Configure OpenCode
+OpenCode will automatically:
+- Clone the repository
+- Install dependencies
+- Register both entry points (`oclitellmac/server`, `oclitellmac/tui`)
+
+### Method 2: Local Development
+
+For plugin development or testing local changes:
+
+```bash
+# Clone repository
+git clone https://github.com/maggu2810/oclitellmac.git
+cd oclitellmac
+
+# Install dependencies
+npm install
+
+# Register with OpenCode (use absolute or relative path)
+opencode plugin add .
+```
+
+### Configure OpenCode
 
 Add both entry points to your `opencode.json`:
 
@@ -66,7 +93,9 @@ Add both entry points to your `opencode.json`:
 }
 ```
 
-### 3. Configure Server Plugin
+**Note**: When using Method 1 (GitHub URL), OpenCode adds these automatically.
+
+### Configure Server Plugin
 
 Create `~/.config/oclitellmac/server.json`:
 
@@ -91,7 +120,7 @@ Create `~/.config/oclitellmac/server.json`:
 
 See `server/config-example.json` for detailed configuration examples.
 
-### 4. Restart OpenCode
+### Restart OpenCode
 
 The plugins will automatically:
 - Load enabled endpoints from config

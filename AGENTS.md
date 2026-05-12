@@ -15,14 +15,11 @@ internal APIs, plugin systems, and TUI components. Working plugin examples are u
 ## Plugin Projects
 
 ### oclitellmac
-Unified plugin combining server and TUI functionality for LiteLLM integration.
-- **Entry Points**: `oclitellmac/server` (provider injection), `oclitellmac/tui` (sidebar display)
+LiteLLM integration plugin (Git submodule).
+- **Location**: `plugins/oclitellmac/` (submodule → github:maggu2810/oclitellmac)
 - **Purpose**: Auto-discovery and configuration of LiteLLM models with budget tracking
-- **Config**: `~/.config/oclitellmac/server.json`
-- **State**: `~/.local/state/oclitellmac/` (providers cache, budget data)
-- **Features**: Multiple endpoints, smart caching with fallback, automatic auth injection, category filtering, real-time budget display
-- **Architecture**: Modular pipeline (fetch → categorize → map → build → filter → transform); TUI consumes server-generated files (no direct API calls)
-- **Docs**: `plugins/oclitellmac/README.md`, `server/ARCHITECTURE.md`, `server/README.md`, `tui/README.md`
+- **Installation**: `opencode plugin github:maggu2810/oclitellmac`
+- **Docs**: See `plugins/oclitellmac/AGENTS.md`
 
 ## Tools
 
@@ -45,11 +42,14 @@ Read @docs/agents-file-conventions.md
 When exploring opencode internals (SDK types, plugin APIs, provider system, TUI components):
 Read @repos/opencode/AGENTS.md
 
-When analyzing server plugin field coverage (provider/model fields, LiteLLM API mapping):
-Read @docs/opencode-litellm/plugin-fields.md
+When working on oclitellmac plugin:
+Read @plugins/oclitellmac/AGENTS.md
+
+When comparing LiteLLM integration approaches (field coverage across 4 implementations):
+Read @docs/litellm-integration/field-coverage-comparison.md
 
 When understanding the shared pipeline architecture (Python tool + TypeScript plugin):
-Read @docs/opencode-litellm/ARCHITECTURE.md
+Read @docs/litellm-integration/shared-pipeline-architecture.md
 
-When implementing new features or fixing bugs (agent-focused implementation guide):
-Read @docs/opencode-litellm/IMPLEMENTATION.md
+When implementing features in config-generator or oclitellmac (implementation guide):
+Read @docs/litellm-integration/implementation-guide.md

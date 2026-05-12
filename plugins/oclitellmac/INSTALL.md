@@ -2,14 +2,44 @@
 
 ## Quick Start
 
-### 1. Install the Plugin
+### Method 1: GitHub URL (Recommended)
+
+Install directly from GitHub:
 
 ```bash
-cd /path/to/opencode-playground/plugins/oclitellmac
+# Global installation (available in all projects)
+opencode plugin github:maggu2810/oclitellmac --global
+
+# Project-local installation
+opencode plugin github:maggu2810/oclitellmac
+```
+
+OpenCode automatically:
+- Clones the repository
+- Installs dependencies
+- Registers both entry points
+
+Skip to step 2 (Configure Server Plugin) below.
+
+### Method 2: Local Development
+
+For development or testing local changes:
+
+```bash
+# Clone repository
+git clone https://github.com/maggu2810/oclitellmac.git
+cd oclitellmac
+
+# Install dependencies
+npm install
+
+# Register with OpenCode
 opencode plugin add .
 ```
 
-### 2. Configure OpenCode
+### 1. Configure OpenCode (Local Path Only)
+
+**Note**: GitHub URL installation adds these automatically.
 
 Edit your `~/.config/opencode/opencode.json` (or project-local `opencode.json`):
 
@@ -22,7 +52,7 @@ Edit your `~/.config/opencode/opencode.json` (or project-local `opencode.json`):
 }
 ```
 
-### 3. Configure Server Plugin
+### 2. Configure Server Plugin
 
 Create `~/.config/oclitellmac/server.json`:
 
@@ -60,7 +90,7 @@ export XDG_CONFIG_HOME="$HOME/my-config"
 
 See `server/config-example.json` for full configuration options.
 
-### 4. Restart OpenCode
+### 3. Restart OpenCode
 
 ```bash
 # If running, restart OpenCode to load the plugins

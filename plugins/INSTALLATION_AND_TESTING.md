@@ -560,7 +560,7 @@ opencode plugin remove oclitellmac-tui
 ## 📚 References
 
 - **Plugin Implementation:** `plugins/IMPLEMENTATION_COMPLETE.md`
-- **Field Coverage:** `docs/opencode-litellm/plugin-fields.md`
+- **Field Coverage:** `docs/litellm-integration/field-coverage-comparison.md`
 - **Server Plugin:** `plugins/oclitellmac-server/README.md`
 - **TUI Plugin:** `plugins/oclitellmac-tui/README.md`
 - **OpenCode Docs:** https://opencode.ai/docs

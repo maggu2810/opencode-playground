@@ -375,6 +375,39 @@ LiteLLM uses different field names:
 
 Both map to OpenCode's `cost.context_over_200k` structure.
 
+### LiteLLM Compatibility: The `litellmProxy` Option
+
+**What it does**: Enables automatic `_noop` tool injection for LiteLLM proxy compatibility.
+
+**Why it's needed**: When using Anthropic models (Claude) through LiteLLM, requests with tool call history but no active tools will fail with:
+```
+Anthropic doesn't support tool calling without tools= param specified
+```
+
+This occurs when previous messages contained tool calls (e.g., `bash`, `read`, `edit`) but the current request doesn't need any tools.
+
+**How oclitellmac handles it**: The plugin automatically sets `options.litellmProxy: true` in all provider configurations, which tells OpenCode to inject a dummy `_noop` tool when:
+- Message history contains tool calls (`tool-call` or `tool-result` content parts)
+- Current request has no active tools defined
+
+**The `_noop` tool**:
+- Satisfies LiteLLM's validation requirement
+- Never actually called (empty schema, generic description)
+- Automatically filtered from UI (`activeTools` list)
+- Zero functional impact (pure validation workaround)
+
+**When it activates**:
+- Automatically detected if provider ID contains "litellm"
+- Or explicitly set via `options.litellmProxy: true` (what oclitellmac does)
+
+**Configuration**:
+oclitellmac sets this automatically for all endpoints. No user configuration needed.
+
+**Reference**: 
+- OpenCode PR [#8658](https://github.com/anomalyco/opencode/pull/8658) - Added explicit `litellmProxy` option
+- OpenCode issues [#8246](https://github.com/anomalyco/opencode/issues/8246), [#2915](https://github.com/anomalyco/opencode/issues/2915)
+- Implementation: `packages/opencode/src/session/llm.ts` (lines 142-162)
+
 ## Performance Considerations
 
 ### Startup Time

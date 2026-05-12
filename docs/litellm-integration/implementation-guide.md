@@ -139,7 +139,7 @@ if args.enable_new_category: enabled_categories.add("new_category")
 ```
 
 **Step 4**: Update documentation (ALL)
-- `docs/opencode-litellm/plugin-fields.md` §4 (category table)
+- `docs/litellm-integration/field-coverage-comparison.md` §4 (category table)
 - `plugins/oclitellmac-server/README.md` (category filtering section)
 - `plugins/oclitellmac-server/config-example.json` (category reference)
 - `tools/config-generator/README.md` (category filtering table)
@@ -206,7 +206,7 @@ export function buildModelEntry(...): AnyRecord {
 ```
 
 **Step 3**: Update documentation
-- `docs/opencode-litellm/plugin-fields.md` §2a (ModelConfig fields table)
+- `docs/litellm-integration/field-coverage-comparison.md` §2a (ModelConfig fields table)
 - Add runtime effect to §6 if applicable
 
 ---
@@ -473,7 +473,7 @@ jq '.models.gpt-4' ~/.local/state/oclitellmac/providers/PROVIDER_KEY.json
 
 2. **Update field mappings** if new fields added
 
-3. **Update `docs/opencode-litellm/plugin-fields.md`** with new schema version
+3. **Update `docs/litellm-integration/field-coverage-comparison.md`** with new schema version
 
 4. **Test both implementations** with new OpenCode version
 
@@ -490,4 +490,4 @@ jq '.models.gpt-4' ~/.local/state/oclitellmac/providers/PROVIDER_KEY.json
 ---
 
 *Last updated: May 2026*  
-*For questions: Check `docs/opencode-litellm/plugin-fields.md` (field reference) and `ARCHITECTURE.md` (design overview)*
+*For questions: Check `docs/litellm-integration/field-coverage-comparison.md` (field reference) and `shared-pipeline-architecture.md` (design overview)*
