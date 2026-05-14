@@ -17,3 +17,6 @@
 [submodule "repos/bun"]
 	path = repos/bun
 	url = https://github.com/oven-sh/bun.git
+[submodule "repos/pacote"]
+	path = repos/pacote
+	url = https://github.com/npm/pacote
