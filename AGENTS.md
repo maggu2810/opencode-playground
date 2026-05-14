@@ -10,7 +10,7 @@ internal APIs, plugin systems, and TUI components. Working plugin examples are u
 - opencode repo: `repos/opencode/` (git submodule, branch: dev)
 - plugins dir: `plugins/`
 - Plugin entry: `plugins/{name}/src/index.ts` or `plugins/{name}/src/index.tsx` (for TUI)
-- Installation: `opencode plugin add <path>` (CLI command)
+- Installation: `opencode plugin <path>` (CLI command)
 
 ## Plugin Projects
 
@@ -39,6 +39,9 @@ Static config generator for LiteLLM proxy endpoints. Outputs `opencode.jsonc` fi
 For AGENTS.md conventions and cost optimization strategy:
 Read @docs/agents-file-conventions.md
 
+When understanding OpenCode plugin CLI commands and spec formats:
+Read @plugins/oclitellmac/docs/opencode-plugin-cli.md
+
 When exploring opencode internals (SDK types, plugin APIs, provider system, TUI components):
 Read @repos/opencode/AGENTS.md
 
@@ -53,3 +56,6 @@ Read @docs/litellm-integration/shared-pipeline-architecture.md
 
 When implementing features in config-generator or oclitellmac (implementation guide):
 Read @docs/litellm-integration/implementation-guide.md
+
+When understanding npm, arborist, pacote, Bun module resolution, and how OpenCode installs plugins:
+Read @docs/package-management.md
