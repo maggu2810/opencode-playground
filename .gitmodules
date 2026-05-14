@@ -14,3 +14,6 @@
 [submodule "repos/opencode-forge"]
 	path = repos/opencode-forge
 	url = https://github.com/chriswritescode-dev/opencode-forge.git
+[submodule "repos/bun"]
+	path = repos/bun
+	url = https://github.com/oven-sh/bun.git
