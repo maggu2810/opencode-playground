@@ -11,3 +11,6 @@
 [submodule "plugins/oclitellmac"]
 	path = plugins/oclitellmac
 	url = git@github.com:maggu2810/oclitellmac
+[submodule "repos/opencode-forge"]
+	path = repos/opencode-forge
+	url = https://github.com/chriswritescode-dev/opencode-forge.git
