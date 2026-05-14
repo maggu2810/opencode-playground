@@ -20,3 +20,6 @@
 [submodule "repos/pacote"]
 	path = repos/pacote
 	url = https://github.com/npm/pacote
+[submodule "repos/npm-cli"]
+	path = repos/npm-cli
+	url = https://github.com/npm/cli
