@@ -2,6 +2,29 @@
 
 Technical reference for npm ecosystem tools (npa, arborist, pacote, Bun resolution) and how OpenCode uses them for plugin installation.
 
+## Documentation Guidelines
+
+**Source verification requirement:**
+
+All factual claims in this document must be verified from actual source files with file path + line/function references. If a statement has not been verified by reading the source in the current session:
+
+- Mark it as an **open question** or **unconfirmed**
+- Do NOT state it as a conclusion
+- Include suspected factors but label them clearly as unverified
+
+**Examples:**
+
+✅ **Correct (source-verified):**
+> `@opentui/solid` is registered via `defaultRuntimeModules` *(verified: `@opentui/solid@0.2.6` `scripts/runtime-plugin-support-configure.ts:34-37`)*
+
+❌ **Incorrect (inference without source):**
+> `@opentui/solid` is not registered — it relies on Bun's global cache
+
+✅ **Correct (unverified but labeled):**
+> The exact cause is not yet confirmed from source. Suspected factors: path containing `:` character, missing `bun.lock`.
+
+**Reason:** Previous versions of this document contained incorrect statements that were presented as source-verified but were actually inferences. This rule ensures documentation accuracy.
+
 ---
 
 ## 1. Overview & Tool Relationships
@@ -192,13 +215,13 @@ When installed via `npm install github:user/my-plugin`, the `prepare` script run
 
 Only `preinstall`, `install`, `postinstall`, `prepare`, `prepublish`, `prepublishOnly`, `prepack`, `postpack` are lifecycle hooks. Renaming `prepare` → `xprepare` prevents auto-execution.
 
-### 3.3 ignoreScripts — Suppressing All Lifecycle Scripts
+### 3.3 ignoreScripts — Suppressing Lifecycle Scripts
 
-**What it does:** Prevents npm/arborist from executing **any** lifecycle scripts during install.
+**What it does:** Prevents npm/arborist from executing lifecycle scripts during install.
 
 **When enabled:**
 - No `preinstall`, `install`, `postinstall`
-- No `prepare` — **git deps will not be built**
+- No `prepare` (for npm registry packages)
 - No `prepublish`, `prepack`, etc.
 
 **CLI usage:**
@@ -222,20 +245,70 @@ npm config delete ignore-scripts
 ```typescript
 const arborist = new Arborist({
   path: "/install/target/dir",
-  ignoreScripts: true,  // ← Suppresses all scripts
+  ignoreScripts: true,  // ← Suppresses lifecycle scripts
 })
 ```
 
-**OpenCode behavior:** OpenCode **always** uses `ignoreScripts: true` (`repos/opencode/packages/core/src/npm.ts:90`). This means:
+#### 3.3.1 The Git Dependency Exception — Why `ignoreScripts` Doesn't Fully Work
 
-- Git-hosted plugins with a `prepare` build step will **not** be built during install
-- The `dist/` directory must already exist in the git repository (committed), or the plugin will fail to load
+**Critical limitation:** For `github:user/repo` specs, `ignoreScripts: true` does **not** suppress the `prepare` script.
 
-**Workaround for git-hosted plugins:**
+**Why:**
 
-1. **Commit `dist/` to the repository** (add to git, remove from `.gitignore`)
-2. **Rename the script** (e.g., `prepare` → `xprepare`) so it's not in the lifecycle
+1. arborist passes `ignoreScripts: true` to pacote when calling `pacote.extract()`
+2. pacote's `GitFetcher` clones the git repo and checks if **any** of these script names exist in `package.json`:
+   - `postinstall`, **`build`**, `preinstall`, `install`, `prepack`, `prepare`
+3. If **any** are found, `GitFetcher.#prepareDir` spawns an **npm subprocess**:
+   ```bash
+   npm install --force --include=dev --cache=... --no-save --no-audit
+   ```
+4. This subprocess does **not** receive `--ignore-scripts` — it runs with scripts **enabled**
+5. `npm install` on a local directory runs the package's `prepare` script as part of its standard lifecycle
+6. After the subprocess completes, pacote's `DirFetcher` runs the `prepare` script again, but this is skipped because `ignoreScripts: true` is checked at that stage
+
+**Result:** The `prepare` script **executes via the npm subprocess**, regardless of `ignoreScripts: true` in arborist.
+
+**Source references (pacote v21.5.0):**
+- `lib/git.js:164-171` — script existence check (includes `build` in the list)
+- `lib/git.js:193` — npm subprocess invocation without `--ignore-scripts`
+- `lib/fetcher.js:105-121` — `npmCliConfig` construction (no `--ignore-scripts` added)
+- `lib/dir.js:35-36` — `DirFetcher.#prepareDir` checks `ignoreScripts` (but runs after subprocess)
+
+**OpenCode behavior:** OpenCode **always** uses `ignoreScripts: true` (`repos/opencode/packages/core/src/npm.ts:90`), but for `github:` specs:
+
+- If the package has `prepare`, `build`, or other scripts → npm subprocess runs → `prepare` executes
+- The `dist/` directory is generated during install **only if** the subprocess succeeds and the `prepare` script builds it
+- If `dist/` is in `.gitignore` and not pre-committed, the build output from `prepare` is included
+
+**Workarounds for git-hosted plugins:**
+
+1. **Rename ALL lifecycle scripts** so the `GitFetcher` trigger condition is false:
+   - Rename `prepare` → `xprepare` or `Xprepare`
+   - Rename `build` → `xbuild` (critical — `build` is in the check list!)
+   - Rename `install`, `postinstall`, `preinstall`, `prepack` if present
+   - When **all** are renamed, the npm subprocess is **never invoked**
+   
+2. **Commit pre-built `dist/` to the repository** (add to git, remove from `.gitignore`)
+   - Git clone includes committed files
+   - Even if scripts don't run, `dist/` is present
+   
 3. **Publish to npm** instead (use `npm:` or bare package name spec)
+   - npm registry tarballs bypass the git-specific subprocess
+   - `ignoreScripts: true` fully suppresses scripts for registry packages
+
+**Example fix (package.json):**
+
+```json
+{
+  "scripts": {
+    "Xprepare": "bun run build",     // ← Renamed from "prepare"
+    "Xbuild": "bun scripts/build.ts", // ← Renamed from "build"
+    "Xtest": "bun test"
+  }
+}
+```
+
+With all scripts renamed, the `GitFetcher` condition at `lib/git.js:164-171` evaluates to false → npm subprocess never runs → no scripts execute.
 
 ---
 
@@ -405,28 +478,142 @@ await pacote.extract("github:user/repo", "./dest")
 const tarball = await pacote.tarball("opencode-forge@0.2.5")
 ```
 
-### 5.3 Why Git Specs Differ
+### 5.3 Git Dependency Two-Phase Build Process
 
-When you do `npm install github:user/repo`, pacote:
+When you do `npm install github:user/repo`, pacote uses a **two-phase process** to prepare the package. Understanding this flow is critical for debugging `github:` install issues.
 
-1. Clones the repo (full git history)
-2. Checks out the specified ref (default: `HEAD` / main branch)
-3. Runs `npm install` in the cloned dir (to install `devDependencies`)
-4. Runs `prepare` script (if not suppressed by `ignoreScripts`)
-5. Packs the working tree into a tarball (excludes `.gitignore`d files)
+#### Phase 1: GitFetcher.#prepareDir — npm Subprocess (Script-Triggered)
+
+**Source:** `pacote v21.5.0 lib/git.js:160-197`
+
+1. Pacote clones the git repository
+2. Reads `package.json` from the cloned repo
+3. **Checks if ANY of these script names exist:**
+   ```javascript
+   scripts.postinstall ||
+   scripts.build ||          // ← NOTE: 'build' is NOT a lifecycle script
+   scripts.preinstall ||
+   scripts.install ||
+   scripts.prepack ||
+   scripts.prepare
+   ```
+4. **If ANY script exists** → spawns an npm subprocess:
+   ```bash
+   npm install --force \
+     --cache=<cache-dir> \
+     --prefer-offline=false \
+     --no-progress \
+     --no-save \
+     --no-audit \
+     --include=dev \
+     --include=peer \
+     --include=optional \
+     --no-package-lock-only \
+     --no-dry-run
+   ```
+   **Critical:** `--ignore-scripts` is **NOT** included in this command, even if arborist was called with `ignoreScripts: true`.
+
+5. This subprocess runs in the cloned git directory
+6. `npm install` on a local directory triggers the **standard npm lifecycle:**
+   - Installs `dependencies` and `devDependencies` from `package.json`
+   - Runs `preinstall` (if present)
+   - Runs `install` (if present)
+   - Runs `postinstall` (if present)
+   - Runs `prepare` (if present) — **this is where builds happen**
+7. `devDependencies` (like `typescript`, `@types/*`, build tools) are now installed in `node_modules/`
+8. The `prepare` script (e.g., `"prepare": "tsc && bun build"`) executes and generates `dist/`
+
+**Why the `build` script name matters:**
+
+The `build` script is **not** a lifecycle script — npm install does not auto-execute it. Its presence in the check list (step 3) only determines **whether to run the subprocess at all**. If you have:
+
+```json
+{
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  }
+}
+```
+
+The subprocess runs because `build` exists in the check → npm install triggers `prepare` → `prepare` calls `npm run build`.
+
+If you rename **all** scripts:
+
+```json
+{
+  "scripts": {
+    "Xbuild": "tsc",
+    "Xprepare": "npm run Xbuild"
+  }
+}
+```
+
+None of `postinstall`, `build`, `preinstall`, `install`, `prepack`, `prepare` exist → check is false → **subprocess never runs**.
+
+#### Phase 2: DirFetcher.#prepareDir — Direct Execution (ignoreScripts-Aware)
+
+**Source:** `pacote v21.5.0 lib/dir.js:30-55`
+
+After the npm subprocess completes (or is skipped), pacote creates a `DirFetcher` and calls its `tarballFromResolved()` method.
+
+`DirFetcher.#prepareDir`:
+
+1. Reads `package.json` from the directory
+2. **Checks `if (this.opts.ignoreScripts) return`** — respects `ignoreScripts: true`
+3. If not suppressed: runs the `prepare` script using `@npmcli/run-script`:
+   ```typescript
+   await runScript({
+     pkg: mani,
+     event: 'prepare',
+     path: this.resolved,
+     stdio: 'pipe',
+   })
+   ```
+
+**Key insight:** By this point, `prepare` has **already run** via the npm subprocess in Phase 1. Phase 2's `prepare` execution is skipped when `ignoreScripts: true`, but the damage is done — the subprocess already executed it.
+
+#### Why ignoreScripts Doesn't Work for Git Specs
+
+- **arborist** passes `ignoreScripts: true` to `pacote.extract()`
+- **pacote** receives `opts.ignoreScripts = true`
+- **DirFetcher** checks `ignoreScripts` and skips `prepare` in Phase 2
+- **GitFetcher** does **not** check `ignoreScripts` before spawning the npm subprocess in Phase 1
+- **npm subprocess** runs without `--ignore-scripts` → executes `prepare` as part of its standard lifecycle
+
+**Result:** `prepare` runs via Phase 1 subprocess, regardless of `ignoreScripts: true`.
+
+#### Comparison: Registry vs Git
+
+| Step                         | npm registry spec                  | `github:` spec                                    |
+|------------------------------|------------------------------------|---------------------------------------------------|
+| Fetch source                 | Download published tarball         | Clone git repository                              |
+| devDependencies              | Not included in tarball            | Cloned (`.gitignore` respected)                   |
+| Phase 1 (GitFetcher)         | N/A (no git clone)                 | Check for scripts → spawn npm subprocess          |
+| npm subprocess               | N/A                                | Runs `npm install` (no `--ignore-scripts`)        |
+| `prepare` via subprocess     | N/A                                | **Executes** (regardless of `ignoreScripts`)     |
+| Phase 2 (DirFetcher)         | Direct tarball extract             | Runs after Phase 1 subprocess                     |
+| `prepare` via DirFetcher     | Skipped (tarball pre-built)        | Skipped if `ignoreScripts: true`                  |
+| Final result                 | Pre-built `dist/` from tarball     | `dist/` from Phase 1 subprocess (if built) or committed files |
+
+#### Inspection Commands
+
+```bash
+# Show what npm subprocess would be called (git.js:193)
+# For a package with scripts.prepare or scripts.build:
+npm install --force \
+  --include=dev \
+  --no-save \
+  --no-audit \
+  --no-progress
+
+# This is the command pacote runs (with added --cache=... etc.)
+```
 
 **This is why:**
-- `github:` specs have access to `devDependencies` during build
-- Published npm tarballs do not include `devDependencies`
-- Git specs can build from source; npm specs are pre-built
-
-**Inspection:**
-```bash
-# Show what would be published (respects .npmignore / files field)
-npm pack --dry-run
-
-# Shows list of files that would be in the tarball
-```
+- `github:` specs can build from source even with `ignoreScripts: true` in arborist
+- Published npm tarballs bypass Phase 1 entirely (no subprocess, no git clone)
+- Renaming scripts to avoid the Phase 1 trigger is the only way to prevent builds for git specs
 
 ---
 
@@ -591,13 +778,22 @@ try {
 }
 "
 # Output: failed: Cannot find module '@opentui/solid' from '<path>'
-# Because: @opentui/solid is not in node_modules/ tree, and Bun global cache fallback
-# only works when the *runtime* has installed it, not when it's a peerDependency
+# Note: import.meta.resolve does NOT use Bun runtime plugins — it's a static resolver.
+# @opentui/solid is not in node_modules/ tree, and Bun can't find it via ancestor lookup.
 ```
 
 **Why opencode's built-in TUI works:**
 
-OpenCode calls `ensureRuntimePluginSupport()` which registers `@opentui/core`, `@opentui/keymap/*` as Bun runtime plugins. However, `@opentui/solid` and `solid-js` are **not** registered — they rely on Bun's global cache resolution.
+OpenCode calls `ensureRuntimePluginSupport()` which registers Bun runtime plugins (via `import { plugin } from "bun"`) that provide virtual in-memory modules for:
+- `@opentui/core`
+- `@opentui/solid` *(verified: `@opentui/solid@0.2.6` `scripts/runtime-plugin-support-configure.ts:34-37` `defaultRuntimeModules`)*
+- `solid-js` and `solid-js/store` *(same source)*
+- `@opentui/keymap/*` (via `additional` parameter)
+
+These modules are never physically installed in plugin `node_modules/` — Bun's runtime plugin hooks intercept bare imports (e.g., `import "@opentui/solid"`) and redirect them to pre-loaded virtual modules using `build.module()` + `build.onResolve()` *(verified: `@opentui/core@0.2.6` `index-64dvh5m8.js:360-369`)*.
+
+**Known issue (unresolved):**
+Plugins installed via `github:` specs fail to load TUI with `"type":"ResolveMessage"` error `"Cannot find module '@opentui/solid'"` despite the runtime plugin being registered. The exact mechanism is not yet confirmed from source. Suspected factors: path containing `:` character (`github:maggu2810`), missing `bun.lock` in ancestor directories, or Bun-internal module context resolution differences between npm registry cache paths vs git cache paths.
 
 ### 7.4 import.meta.resolve in OpenCode
 
@@ -1014,9 +1210,11 @@ resolveEntryPoint("opencode-forge", "/home/user/.cache/opencode/packages/github:
 // }
 ```
 
-### 9.6 TUI Plugin Loading — ensureRuntimePluginSupport & @opentui Resolution
+### 9.6 TUI Plugin Loading — Bun Runtime Plugin Mechanism
 
-**ensureRuntimePluginSupport:**
+OpenCode's TUI plugin system relies on **Bun runtime plugins** to provide `@opentui/*` modules without installing them into plugin `node_modules/`.
+
+#### 9.6.1 ensureRuntimePluginSupport — Virtual Module Registration
 
 ```typescript
 // repos/opencode/packages/opencode/src/cli/cmd/tui/plugin/runtime.ts:1-2,43
@@ -1025,57 +1223,273 @@ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-suppor
 ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
 ```
 
-**What it does:**
-
-Registers Bun runtime plugins for:
-- `@opentui/core`
-- `@opentui/core/testing`
-- `@opentui/keymap/*` (via `keymapRuntimeModules`)
-
-**What is NOT registered:**
-- `@opentui/solid` — must be resolved via `node_modules/` or Bun global cache
-- `solid-js` — must be resolved via `node_modules/` or Bun global cache
-
-**Plugin loading:**
+**Source-verified implementation** (`@opentui/solid@0.2.6` `scripts/runtime-plugin-support-configure.ts`):
 
 ```typescript
-// repos/opencode/packages/opencode/src/plugin/loader.ts:119-128
-export async function load(row: Resolved): Promise<{ ok: true; value: Loaded } | { ok: false; error: unknown }> {
-  let mod
-  try {
-    mod = await import(row.entry)  // row.entry is file:///path/to/dist/tui.js
-  } catch (error) {
-    return { ok: false, error }
-  }
-  if (!mod) return { ok: false, error: new Error(`Plugin ${row.spec} module is empty`) }
-  return { ok: true, value: { ...row, mod } }
+// Line 1: import { plugin as registerBunPlugin } from "bun"
+// Lines 34-37: defaultRuntimeModules
+const defaultRuntimeModules: Record<string, RuntimeModuleEntry> = {
+  "@opentui/solid": solidRuntime as Record<string, unknown>,
+  "solid-js": solidJsRuntime as Record<string, unknown>,
+  "solid-js/store": solidJsStoreRuntime as Record<string, unknown>,
 }
 ```
 
-**When `import(row.entry)` executes:**
+**What this registers:**
 
-The TUI bundle (`dist/tui.js`) contains:
+Using `import { plugin } from "bun"` (Bun **runtime** plugin API, not bundler-only), it registers virtual in-memory modules for:
+- `@opentui/core` (from `@opentui/core` runtime)
+- `@opentui/core/testing`
+- `@opentui/solid` *(from `defaultRuntimeModules`)*
+- `solid-js` *(from `defaultRuntimeModules`)*
+- `solid-js/store` *(from `defaultRuntimeModules`)*
+- `@opentui/keymap/*` (via `additional` parameter)
+
+**How it works** (`@opentui/core@0.2.6` `index-64dvh5m8.js:360-369`):
+
 ```typescript
-import { createComponent } from "@opentui/solid"
-import { createSignal } from "solid-js"
+// For each specifier (e.g., "@opentui/solid"):
+const moduleId = runtimeModuleIdForSpecifier(specifier)  // "opentui:runtime-module:%40opentui%2Fsolid"
+
+build.module(moduleId, async () => ({
+  exports: await resolveRuntimeModuleExports(moduleEntry),
+  loader: "object"
+}))
+
+build.onResolve({ filter: exactSpecifierFilter(specifier) }, () => ({ path: moduleId }))
+// exactSpecifierFilter = /^@opentui\/solid$/ (exact match, no path discrimination)
 ```
 
-Bun resolves these imports by:
-1. Starting from `dist/tui.js`'s directory
-2. Walking up to find `node_modules/@opentui/solid`
-3. If not found in `node_modules/` tree: falling back to `~/.bun/install/cache/@opentui/solid@<version>@@@1/`
+**Module resolution flow:**
 
-**Why some plugins fail:**
+1. Plugin's `dist/tui.js` contains: `import { createComponent } from "@opentui/solid"`
+2. OpenCode does `await import(row.entry)` where `row.entry = file:///path/to/dist/tui.js`
+3. Bun encounters the `import "@opentui/solid"` statement
+4. Bun's runtime plugin's `onResolve` hook catches the specifier `"@opentui/solid"` (via regex `/^@opentui\/solid$/`)
+5. Returns `{ path: "opentui:runtime-module:%40opentui%2Fsolid" }`
+6. `build.module()` provides the virtual module contents from OpenCode's bundled copy
 
-If `@opentui/solid` is declared as an **optional peerDependency**, arborist does **not** install it into `node_modules/`. The plugin must then rely on Bun's global cache fallback.
+**No filesystem lookup needed** — `@opentui/solid` is never physically installed in plugin `node_modules/`.
 
-If the Bun global cache doesn't have the exact version, or resolution starts from the wrong directory, `import()` fails with:
+#### 9.6.2 Known Issue: Colon in Path Breaks Module Resolution (Bun Compiled Binary)
 
+**Symptom:**
+
+Plugins installed via `github:` specs fail to load with:
+
+```json
+{
+  "type": "ResolveMessage",
+  "message": "Cannot find module '@opentui/solid' from '/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/dist/tui.js'"
+}
 ```
-Cannot find module '@opentui/solid' from '/path/to/dist/tui.js'
+
+Server plugins also fail:
+```json
+{
+  "message": "Cannot find module '@opencode-ai/sdk/v2' from '/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/dist/index.js'"
+}
 ```
 
-**Workaround:** Install `@opentui/solid` and `solid-js` in `devDependencies` (pinned to the exact version OpenCode uses), build the plugin with those versions, and rely on Bun's global cache having them available at runtime.
+The same failure occurs for **any plugin** whose full filesystem path (including ancestor directories) contains `:`, even when installed via local path specs.
+
+**Root cause (confirmed by experiment):**
+
+Any `:` character anywhere in the **full filesystem path of the plugin** (the plugin directory itself or any ancestor directory) breaks module resolution **inside Bun compiled binaries** (OpenCode uses `Bun.build({ compile: true })`). This is not an issue with the Bun runtime plugin mechanism — it's a Bun compiled binary limitation.
+
+The working directory (CWD) of the opencode process is irrelevant — what matters is where the plugin files are located on disk.
+
+**Test subject:**
+- `/tmp/testplugin` = npm tarball content of `opencode-forge` v0.2.5 (published package)
+- Contains `dist/tui.js` with `"oc-plugin": ["server", "tui"]` in `package.json`
+- Scripts renamed to `Xbuild`, `Xprepare` (not lifecycle triggers)
+
+**Test isolation requirements:**
+- Run from a directory with **no `.opencode/` in any parent directory** (OpenCode walks up from CWD to git root AND reads `~/.config/opencode/`)
+- Clear `~/.cache/opencode/packages/` before each test
+- Clear `~/.local/share/opencode/log/*` for clean logs
+
+**Reproducer (executed May 14, 2026):**
+
+**Test 1-4: Colon in plugin directory name**
+
+```bash
+cd /tmp
+
+# Verify no .opencode in ancestors
+[[ ! -e /.opencode ]] && [[ ! -e /tmp/.opencode ]]
+# Output: all fine
+
+mkdir testenv
+cd testenv
+mkdir opencode-colon-fileproto
+mkdir opencode-underscore-fileproto
+mkdir opencode-colon-nofileproto
+mkdir opencode-underscore-nofileproto
+
+# Copy test plugin (identical content in all 4 dirs, only directory name differs)
+cp -ax /tmp/testplugin opencode-colon-fileproto/test:plugin
+cp -ax /tmp/testplugin opencode-underscore-fileproto/test_plugin
+cp -ax /tmp/testplugin opencode-colon-nofileproto/test:plugin
+cp -ax /tmp/testplugin opencode-underscore-nofileproto/test_plugin
+
+# Test 1: colon + file:// protocol
+(cd opencode-colon-fileproto; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin "file://${PWD}/test:plugin"; \
+  opencode)
+# Result: ❌ NO opencode-forge in sidebar
+
+# Test 2: underscore + file:// protocol
+(cd opencode-underscore-fileproto; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin "file://${PWD}/test_plugin"; \
+  opencode)
+# Result: ✅ opencode-forge in sidebar
+
+# Test 3: colon + no protocol (bare absolute path)
+(cd opencode-colon-nofileproto; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin "${PWD}/test:plugin"; \
+  opencode)
+# Result: ❌ NO opencode-forge in sidebar
+
+# Test 4: underscore + no protocol (bare absolute path)
+(cd opencode-underscore-nofileproto; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin "${PWD}/test_plugin"; \
+  opencode)
+# Result: ✅ opencode-forge in sidebar
+```
+
+**Test 5-6: Colon in ancestor directory (plugin name is clean)**
+
+These tests isolate whether the issue is the plugin's own directory name or the full path:
+
+```bash
+cd /tmp/testenv
+
+# Test 5: CWD with colon, plugin directory name has colon
+mkdir 'opencode:test'
+cp -ax /tmp/testplugin 'opencode:test'/test_plugin
+(cd 'opencode:test'; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin "${PWD}/test_plugin"; \
+  opencode)
+# Result: ❌ NO opencode-forge in sidebar
+# Full plugin path: /tmp/testenv/opencode:test/test_plugin (ancestor has colon)
+
+# Test 6: Clean CWD, plugin under ancestor directory with colon
+mkdir 'opencode-test-plugin-full-path'
+mkdir "plugin:space"
+cp -ax /tmp/testplugin "plugin:space"/testplugin
+(cd 'opencode-test-plugin-full-path'; \
+  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
+  opencode plugin /tmp/testenv/"plugin:space"/testplugin; \
+  opencode)
+# Result: ❌ NO opencode-forge in sidebar
+# Full plugin path: /tmp/testenv/plugin:space/testplugin (ancestor has colon)
+# CWD: /tmp/testenv/opencode-test-plugin-full-path (no colon)
+```
+
+**Key insight from Tests 5-6:** The failure occurs even when the plugin's own directory name is clean (`test_plugin`, `testplugin`), as long as **any ancestor directory** in the full path contains `:`. The CWD of the opencode process is irrelevant — only the plugin's installation path matters.
+
+**Config verification:**
+
+After install, `.opencode/tui.json` contained the expected plugin registration in all 4 test directories:
+
+```json
+// opencode-colon-fileproto/.opencode/tui.json
+{
+  "plugin": [
+    "file:///tmp/testenv/opencode-colon-fileproto/test:plugin"
+  ]
+}
+
+// opencode-underscore-fileproto/.opencode/tui.json
+{
+  "plugin": [
+    "file:///tmp/testenv/opencode-underscore-fileproto/test_plugin"
+  ]
+}
+
+// opencode-colon-nofileproto/.opencode/tui.json
+{
+  "plugin": [
+    "/tmp/testenv/opencode-colon-nofileproto/test:plugin"
+  ]
+}
+
+// opencode-underscore-nofileproto/.opencode/tui.json
+{
+  "plugin": [
+    "/tmp/testenv/opencode-underscore-nofileproto/test_plugin"
+  ]
+}
+```
+
+**Conclusion:** The plugin registration is correct in all test cases. The failure occurs during TUI plugin loading (dynamic `import()` of `dist/tui.js`) when the **plugin's full filesystem path** contains `:`.
+
+**Evidence summary:**
+
+| Plugin path spec | Path contains `:` | Sidebar loads? |
+|---|---|---|
+| `file:///tmp/testenv/.../test:plugin` | ✅ Yes (plugin dir name) | ❌ FAIL |
+| `file:///tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
+| `/tmp/testenv/.../test:plugin` | ✅ Yes (plugin dir name) | ❌ FAIL |
+| `/tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
+| CWD=`/tmp/testenv/opencode:test/`, plugin=`./test_plugin`<br/>Full path: `/tmp/testenv/opencode:test/test_plugin` | ✅ Yes (ancestor dir) | ❌ FAIL |
+| CWD=`/tmp/testenv/opencode-test-plugin-full-path/` (clean),<br/>plugin=`/tmp/testenv/plugin:space/testplugin` | ✅ Yes (ancestor dir) | ❌ FAIL |
+| Standalone Bun 1.3.13 + colon path | ✅ Yes | ✅ SUCCESS |
+| Bun compiled binary (opencode) + colon in plugin path | ✅ Yes | ❌ FAIL |
+
+**Key finding:** Both `file://` protocol and bare absolute path forms fail equally when the plugin's full path contains `:`. The issue is in Bun's compiled binary module resolution, not in OpenCode's path handling. The CWD of the opencode process does not affect the outcome — only the plugin's installation path matters.
+
+**Why the `:` remains in the path (source-verified):**
+
+```typescript
+// repos/opencode/packages/core/src/npm.ts:40-45
+const illegal = process.platform === "win32" ? new Set(["<", ">", ":", '"', "|", "?", "*"]) : undefined
+
+export function sanitize(pkg: string) {
+  if (!illegal) return pkg  // On Linux: illegal = undefined, returns as-is
+  return Array.from(pkg, (char) => (illegal.has(char) || char.charCodeAt(0) < 32 ? "_" : char)).join("")
+}
+
+// Result: sanitize("github:maggu2810/...") → "github:maggu2810/..." on Linux
+```
+
+On Linux, `:` is a legal filesystem character, so `sanitize()` preserves it. The cache path literally becomes `~/.cache/opencode/packages/github:maggu2810/...`.
+
+**Why standalone Bun works but compiled binary doesn't:**
+
+- **Standalone Bun 1.3.13**: Module resolution for `file://` URLs with `:` in path works correctly — verified by test
+- **Bun compiled binary** (`Bun.build({ compile: true })`): Uses virtual filesystem `/$bunfs/root/` (Linux) or `B:/~BUN/root/` (Windows) for bundled modules; external dynamic imports from paths containing `:` fail due to how the compiled runtime parses filesystem paths
+
+Bun source is not available locally to verify the exact compiled-binary path-parsing issue. The failure is reproducible and specific to compiled binaries.
+
+**Scope of the issue:**
+
+- **All** external imports from files in paths containing `:` fail (not just `@opentui/solid`)
+- Affects both server (`@opencode-ai/sdk`) and TUI (`@opentui/solid`) plugins
+- Affects **any plugin** whose full installation path (including all ancestor directories) contains `:`
+  - `github:` specs: cache path `~/.cache/opencode/packages/github:user/repo/` always has `:`
+  - Local path specs: only if the full path to the plugin contains `:` anywhere
+- Does **not** affect npm registry specs (`opencode-forge@1.0.0`) — no `:` in cache path
+
+**Workaround status:**
+
+**No workaround for `github:` specs on Linux** — the `:` in `github:user/repo` becomes part of the cache directory path (`~/.cache/opencode/packages/github:user/repo/`), which is chosen by the application. There is currently no known mechanism to change this cache location or sanitize the path on Linux. This breaks module resolution in Bun compiled binaries.
+
+**Alternatives:**
+1. **Use npm registry specs** — `opencode plugin opencode-forge` (no `:` in cache path)
+2. **Use local path specs** — only if the **full installation path** contains no `:` in any directory name (e.g., `/home/user/plugins/my-plugin` works, but `/home/user/project:name/plugin` or `/home/user/plugins/test:plugin` both fail)
+3. **On Windows** — `sanitize()` strips `:` automatically, so `github:` specs work (cache path becomes `github_user_repo`)
+
+**Impact on git-hosted plugins:**
+- `github:user/repo` specs are effectively broken on Linux when using OpenCode compiled binary
+- Workaround: publish to npm registry and install via `opencode plugin <package-name>`
+- Alternative: install from local filesystem with no `:` in path, then manage updates manually
 
 ---
 
@@ -1086,20 +1500,24 @@ Cannot find module '@opentui/solid' from '/path/to/dist/tui.js'
 | `opencode-forge`                    | `range`    | `"opencode-forge"` | `"opencode-forge@latest"`     | `~/.cache/opencode/packages/opencode-forge@latest/`     | Fetches latest from npm registry                         | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
 | `opencode-forge@1.0.0`              | `version`  | `"opencode-forge"` | `"opencode-forge@1.0.0"`      | `~/.cache/opencode/packages/opencode-forge@1.0.0/`      | Fetches v1.0.0 from npm registry                         | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
 | `@maggu2810/opencode-forge`         | `range`    | `"@maggu2810/..."` | `"@maggu2810/...@latest"`     | `~/.cache/opencode/packages/@maggu2810/opencode-forge@latest/` | Fetches latest from npm registry (scoped)        | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `github:maggu2810/opencode-forge`   | `git`      | `undefined`        | `"github:maggu2810/..."`      | `~/.cache/opencode/packages/github:maggu2810/opencode-forge/` | Clones git repo, installs deps                   | No¹             | Only if committed (`.gitignore` respected)  | Fails if `dist/` missing; succeeds if committed |
-| `maggu2810/opencode-forge`          | `git`      | `undefined`        | `"maggu2810/opencode-forge"`  | `~/.cache/opencode/packages/maggu2810/opencode-forge/`  | Same as `github:` (implicit GitHub)                      | No¹             | Only if committed                           | Same as `github:`                        |
-| `npm:opencode-forge`                | `alias`    | `undefined`²       | `"npm:opencode-forge"`        | `~/.cache/opencode/packages/npm:opencode-forge/`        | Resolves alias to npm registry, fetches                  | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `/absolute/path`                    | `directory`| `undefined`        | N/A³                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
-| `./relative/path`                   | `directory`| `undefined`        | N/A³                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
-| `file:///absolute/path`             | `directory`| `undefined`        | N/A³                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
+| `github:maggu2810/opencode-forge`   | `git`      | `undefined`        | `"github:maggu2810/..."`      | `~/.cache/opencode/packages/github:maggu2810/opencode-forge/` | Clones git repo, npm subprocess                  | **Yes²**        | Only if committed OR built by subprocess    | **Linux: fails⁵. Windows: works** |
+| `maggu2810/opencode-forge`          | `git`      | `undefined`        | `"maggu2810/opencode-forge"`  | `~/.cache/opencode/packages/maggu2810/opencode-forge/`  | Same as `github:` (implicit GitHub)                      | **Yes²**        | Only if committed OR built by subprocess    | Same as `github:`                        |
+| `npm:opencode-forge`                | `alias`    | `undefined`³       | `"npm:opencode-forge"`        | `~/.cache/opencode/packages/npm:opencode-forge/`        | Resolves alias to npm registry, fetches                  | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
+| `/absolute/path`                    | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
+| `./relative/path`                   | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
+| `file:///absolute/path`             | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
 
 **Footnotes:**
 
-¹ OpenCode always uses `ignoreScripts: true`, so `prepare` never runs. For git specs without committed `dist/`, this causes failure.
+¹ OpenCode uses `ignoreScripts: true`. For npm registry specs, this fully suppresses `prepare`. Tarball is pre-built.
 
-² For `alias` type, `npa().name` is `undefined`, but `subSpec.name` contains the actual package name. OpenCode doesn't extract `subSpec`, so falls back to full spec string.
+² **Git specs are the exception:** OpenCode uses `ignoreScripts: true`, but pacote's `GitFetcher` spawns an npm subprocess **without** `--ignore-scripts`. If the package has `prepare`, `build`, or other lifecycle scripts, the subprocess runs `npm install` which executes `prepare` as part of the standard lifecycle. See Section 3.3.1 and Section 5.3 for details.
 
-³ Path specs bypass `Npm.add()` entirely — they go through `resolvePathPluginTarget()` which directly returns the path as a `file://` URL.
+³ For `alias` type, `npa().name` is `undefined`, but `subSpec.name` contains the actual package name. OpenCode doesn't extract `subSpec`, so falls back to full spec string.
+
+⁴ Path specs bypass `Npm.add()` entirely — they go through `resolvePathPluginTarget()` which directly returns the path as a `file://` URL.
+
+⁵ **TUI and server plugins from git specs fail on Linux:** The `:` character in cache paths (`github:maggu2810`) breaks module resolution in Bun compiled binaries (OpenCode's embedded Bun). All external module imports fail (not just `@opentui/solid`). Root cause: Bun compiled binary limitation — any `:` in the **full filesystem path** of the plugin (including ancestor directories) causes module resolution to fail. The cache path `~/.cache/opencode/packages/github:user/repo/` always contains `:`, which is chosen by the application with no known mechanism to change it. Workaround: use npm registry specs (no `:` in cache path), or local paths where the **entire installation path** (plugin directory + all ancestors) contains no `:`. See Section 9.6.2 for experiment details. **Windows is unaffected** — `sanitize()` strips `:` automatically.
 
 ---
 
@@ -1380,25 +1798,58 @@ ls -la git-clone/dist/ 2>&1 | head -10
 
 **npm registry vs git repository installs:**
 
-| Source         | Fetch method         | `prepare` runs? | `dist/` included?                     |
-|----------------|----------------------|-----------------|---------------------------------------|
-| npm registry   | Published tarball    | No¹             | Yes (from `files` in package.json)    |
-| git repository | Clone + optional build | No¹           | Only if committed (not in .gitignore) |
+| Source         | Fetch method           | `prepare` runs?           | `dist/` included?                     |
+|----------------|------------------------|---------------------------|---------------------------------------|
+| npm registry   | Published tarball      | No (ignoreScripts works)  | Yes (from `files` in package.json)    |
+| git repository | Clone + npm subprocess | **Yes** (subprocess)¹     | Only if committed OR built by subprocess |
 
-¹ OpenCode uses `ignoreScripts: true`
+¹ **Critical:** OpenCode uses `ignoreScripts: true`, but for `github:` specs, pacote's `GitFetcher` spawns an npm subprocess **without** `--ignore-scripts`. The `prepare` script executes via this subprocess, regardless of arborist's `ignoreScripts` setting.
 
-**Why `github:` installs fail without committed `dist/`:**
+**Why `github:` installs run scripts despite `ignoreScripts: true`:**
 
-1. Arborist clones the git repo (only committed files)
-2. `ignoreScripts: true` skips the `prepare` script (no build)
-3. If `dist/` is in `.gitignore` and not committed: **absent**
-4. Plugin tries `import("./dist/tui.js")` → **file not found**
+1. Arborist calls `pacote.extract(spec, path, { ignoreScripts: true })`
+2. Pacote's `GitFetcher` clones the git repo
+3. `GitFetcher.#prepareDir` checks if **any** of `postinstall`, `build`, `preinstall`, `install`, `prepack`, `prepare` exist in `scripts`
+4. If **any** exist → spawns: `npm install --force --include=dev` (no `--ignore-scripts` flag)
+5. npm subprocess runs `prepare` script as part of standard lifecycle
+6. `DirFetcher.#prepareDir` would run `prepare` again, but skips due to `ignoreScripts: true` (already ran via subprocess)
 
-**Workarounds:**
+**The actual workarounds:**
 
-- **Commit `dist/` to the git repository** (remove from `.gitignore`)
-- **Rename the script** (`prepare` → `xprepare`) so it's not a lifecycle hook
-- **Publish to npm** (use `npm:opencode-forge` or bare name spec)
+1. **Rename ALL lifecycle scripts** to avoid the `GitFetcher` trigger:
+   ```json
+   {
+     "scripts": {
+       "Xprepare": "bun run build",  // ← Renamed (not 'prepare')
+       "Xbuild": "bun scripts/build.ts", // ← Renamed (not 'build')
+       "Xpostinstall": "echo done"   // ← Renamed (not 'postinstall')
+     }
+   }
+   ```
+   When **all** of `postinstall`, `build`, `preinstall`, `install`, `prepack`, `prepare` are absent → npm subprocess is **never invoked** → no scripts run.
+
+2. **Commit pre-built `dist/` to the repository** (remove from `.gitignore`):
+   - Git clone includes committed files
+   - Even if npm subprocess runs and fails, `dist/` is already present
+
+3. **Publish to npm registry** (use `npm:opencode-forge` or bare name spec):
+   - Registry tarballs bypass the git-specific subprocess entirely
+   - `ignoreScripts: true` fully suppresses scripts for registry packages
+
+**Why the `build` script name matters:**
+
+The `build` script is **not** a lifecycle script (npm install does not auto-execute it). Its presence in the `GitFetcher.#prepareDir` check list determines whether to spawn the npm subprocess. If `build` exists but `prepare` does not, the subprocess still runs (installing devDeps), but no build happens. Typically, `build` and `prepare` work together:
+
+```json
+{
+  "scripts": {
+    "build": "tsc && bun build",
+    "prepare": "npm run build"
+  }
+}
+```
+
+Renaming only `prepare` → `Xprepare` is insufficient if `build` still exists — the subprocess runs, but `prepare` doesn't trigger the build. Renaming **both** ensures the subprocess never runs.
 
 **Why `@opentui/solid` resolution fails for some plugins:**
 
@@ -1419,7 +1870,7 @@ Install `@opentui/solid` and `solid-js` in `devDependencies` (pinned to exact Op
 # Classify spec
 bun -e "import npa from 'npm-package-arg'; console.log(npa('github:user/repo'))"
 
-# Install without scripts
+# Install without scripts (works for registry, NOT for github: specs)
 npm install --ignore-scripts <package>
 
 # Inspect cache
@@ -1427,7 +1878,19 @@ ls ~/.cache/opencode/packages/
 
 # Test resolution
 bun -e "try { console.log(import.meta.resolve('@opentui/solid', '/path')) } catch(e) { console.log('failed') }"
+
+# Verify which scripts would trigger npm subprocess (git specs only)
+# Check if package.json has any of: postinstall, build, preinstall, install, prepack, prepare
+cat package.json | jq '.scripts | keys[] | select(. == "postinstall" or . == "build" or . == "preinstall" or . == "install" or . == "prepack" or . == "prepare")'
 ```
+
+**Source code references for the git subprocess issue:**
+
+- `pacote v21.5.0 lib/git.js:164-171` — script existence check
+- `pacote v21.5.0 lib/git.js:193` — npm subprocess spawn (no `--ignore-scripts`)
+- `pacote v21.5.0 lib/fetcher.js:105-121` — `npmCliConfig` construction
+- `pacote v21.5.0 lib/dir.js:35-36` — `DirFetcher` checks `ignoreScripts` (Phase 2)
+- `arborist v9.4.0 lib/arborist/reify.js:704` — `pacote.extract()` call with `ignoreScripts: true`
 
 ---
 
