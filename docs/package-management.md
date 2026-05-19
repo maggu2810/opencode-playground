@@ -1271,7 +1271,7 @@ build.onResolve({ filter: exactSpecifierFilter(specifier) }, () => ({ path: modu
 
 **No filesystem lookup needed** — `@opentui/solid` is never physically installed in plugin `node_modules/`.
 
-#### 9.6.2 Known Issue: Colon in Path Breaks Module Resolution (Bun Compiled Binary)
+#### 9.6.2 Known Issue: Colon in Path Breaks Plugin Loading (OpenCode Bug)
 
 **Symptom:**
 
@@ -1293,9 +1293,23 @@ Server plugins also fail:
 
 The same failure occurs for **any plugin** whose full filesystem path (including ancestor directories) contains `:`, even when installed via local path specs.
 
-**Root cause (confirmed by experiment):**
+**Root cause (under investigation as of May 15, 2026):**
 
-Any `:` character anywhere in the **full filesystem path of the plugin** (the plugin directory itself or any ancestor directory) breaks module resolution **inside Bun compiled binaries** (OpenCode uses `Bun.build({ compile: true })`). This is not an issue with the Bun runtime plugin mechanism — it's a Bun compiled binary limitation.
+The bug is **in OpenCode's plugin loading mechanism**, not in Bun itself.
+
+**What we know:**
+- Plugins at paths containing `:` fail to load in OpenCode (May 14, 2026 experiments)
+- **Bun compiled binaries handle `:` correctly** — comprehensive reproducer (`tests/bun-colon-repro/`) confirms that Bun `1.3.13` compiled binaries successfully:
+  - Dynamic import modules from colon paths ✅
+  - Resolve relative imports from colon paths ✅
+  - Resolve `node_modules` (bare specifiers) from colon paths ✅
+- The failure must occur in OpenCode's code, likely in:
+  - Path construction before `import()` call
+  - `pathToFileURL()` usage — may produce malformed URLs when path contains `:`
+  - `ensureRuntimePluginSupport` mechanism
+  - `resolvePluginEntrypoint()` or `resolvePackagePath()` functions
+
+See `../tests/bun-colon-repro/README.md` for full Bun reproducer details (all 12 tests passed).
 
 The working directory (CWD) of the opencode process is irrelevant — what matters is where the plugin files are located on disk.
 
@@ -1438,12 +1452,38 @@ After install, `.opencode/tui.json` contained the expected plugin registration i
 | `file:///tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
 | `/tmp/testenv/.../test:plugin` | ✅ Yes (plugin dir name) | ❌ FAIL |
 | `/tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
-| CWD=`/tmp/testenv/opencode:test/`, plugin=`./test_plugin`<br/>Full path: `/tmp/testenv/opencode:test/test_plugin` | ✅ Yes (ancestor dir) | ❌ FAIL |
-| CWD=`/tmp/testenv/opencode-test-plugin-full-path/` (clean),<br/>plugin=`/tmp/testenv/plugin:space/testplugin` | ✅ Yes (ancestor dir) | ❌ FAIL |
-| Standalone Bun 1.3.13 + colon path | ✅ Yes | ✅ SUCCESS |
-| Bun compiled binary (opencode) + colon in plugin path | ✅ Yes | ❌ FAIL |
+| CWD=`/tmp/testenv/opencode:test/`, plugin=`./test_plugin`<br/>Full path: `/tmp/testenv/opencode:test/test_plugin` | ✅ Yes (ancestor dir) | ❌ FAIL (OpenCode) |
+| CWD=`/tmp/testenv/opencode-test-plugin-full-path/` (clean),<br/>plugin=`/tmp/testenv/plugin:space/testplugin` | ✅ Yes (ancestor dir) | ❌ FAIL (OpenCode) |
+| Standalone Bun 1.3.13 + colon path (manual test) | ✅ Yes | ✅ SUCCESS |
+| Standalone Bun 1.3.13 compiled binary + colon path<br/>(reproducer: `tests/bun-colon-repro/`, all 12 tests) | ✅ Yes | ✅ SUCCESS |
+| OpenCode binary + colon in plugin path | ✅ Yes | ❌ FAIL |
 
-**Key finding:** Both `file://` protocol and bare absolute path forms fail equally when the plugin's full path contains `:`. The issue is in Bun's compiled binary module resolution, not in OpenCode's path handling. The CWD of the opencode process does not affect the outcome — only the plugin's installation path matters.
+**Key finding:** Both `file://` protocol and bare absolute path forms fail equally when the plugin's full path contains `:`. The issue is **in OpenCode's plugin loading path**, not in Bun's module resolution. The CWD of the opencode process does not affect the outcome — only the plugin's installation path matters.
+
+**Bun reproducer results (May 15, 2026):**
+
+To isolate whether the bug was in Bun or OpenCode, a standalone reproducer was created at `tests/bun-colon-repro/`:
+
+```bash
+# Compiled a minimal binary that does: await import(process.argv[2])
+# Tested three scenarios:
+#   Step 1: Zero-dependency plugin
+#   Step 2: Plugin with relative imports
+#   Step 3: Plugin with node_modules dependencies
+
+cd tests/bun-colon-repro
+./run.sh
+```
+
+**All 12 tests passed**, including all colon path cases:
+
+| Step | Test Type | Compiled Binary + Colon Path | Standalone Bun + Colon Path |
+|------|-----------|------------------------------|----------------------------|
+| 1 | Dynamic import (no deps) | ✅ PASS | ✅ PASS |
+| 2 | Relative imports | ✅ PASS | ✅ PASS |
+| 3 | Node modules (bare specifiers) | ✅ PASS | ✅ PASS |
+
+**Conclusion:** Bun `1.3.13` compiled binaries handle `:` in filesystem paths correctly. The bug is definitively in OpenCode's code, not Bun. See `../tests/bun-colon-repro/README.md` for full reproducer details.
 
 **Why the `:` remains in the path (source-verified):**
 
@@ -1461,12 +1501,16 @@ export function sanitize(pkg: string) {
 
 On Linux, `:` is a legal filesystem character, so `sanitize()` preserves it. The cache path literally becomes `~/.cache/opencode/packages/github:maggu2810/...`.
 
-**Why standalone Bun works but compiled binary doesn't:**
+**Why standalone Bun works and OpenCode doesn't:**
 
-- **Standalone Bun 1.3.13**: Module resolution for `file://` URLs with `:` in path works correctly — verified by test
-- **Bun compiled binary** (`Bun.build({ compile: true })`): Uses virtual filesystem `/$bunfs/root/` (Linux) or `B:/~BUN/root/` (Windows) for bundled modules; external dynamic imports from paths containing `:` fail due to how the compiled runtime parses filesystem paths
+- **Standalone Bun 1.3.13**: Module resolution for `file://` URLs with `:` in path works correctly — verified by standalone reproducer (12/12 tests passed)
+- **Bun compiled binary (standalone reproducer)**: All 12 tests passed including colon paths ✅
+- **OpenCode binary**: Fails to load plugins from colon paths ❌
 
-Bun source is not available locally to verify the exact compiled-binary path-parsing issue. The failure is reproducible and specific to compiled binaries.
+The difference is **not** in how Bun is compiled, but in **OpenCode's plugin loading code**. Likely causes:
+- `pathToFileURL()` may produce malformed URLs when path contains `:`
+- Path normalization in `resolvePluginEntrypoint()` may strip or mangle `:`
+- The `ensureRuntimePluginSupport` mechanism may fail for certain path formats
 
 **Scope of the issue:**
 
@@ -1479,16 +1523,17 @@ Bun source is not available locally to verify the exact compiled-binary path-par
 
 **Workaround status:**
 
-**No workaround for `github:` specs on Linux** — the `:` in `github:user/repo` becomes part of the cache directory path (`~/.cache/opencode/packages/github:user/repo/`), which is chosen by the application. There is currently no known mechanism to change this cache location or sanitize the path on Linux. This breaks module resolution in Bun compiled binaries.
+**Short-term workaround available:** OpenCode could sanitize cache paths on Linux (strip `:` from `github:` specs) similar to how Windows does. This would fix `github:` specs but not user-supplied local paths with `:`.
 
-**Alternatives:**
+**Current alternatives:**
 1. **Use npm registry specs** — `opencode plugin opencode-forge` (no `:` in cache path)
 2. **Use local path specs** — only if the **full installation path** contains no `:` in any directory name (e.g., `/home/user/plugins/my-plugin` works, but `/home/user/project:name/plugin` or `/home/user/plugins/test:plugin` both fail)
 3. **On Windows** — `sanitize()` strips `:` automatically, so `github:` specs work (cache path becomes `github_user_repo`)
 
 **Impact on git-hosted plugins:**
-- `github:user/repo` specs are effectively broken on Linux when using OpenCode compiled binary
-- Workaround: publish to npm registry and install via `opencode plugin <package-name>`
+- `github:user/repo` specs are broken on Linux due to `:` in cache path
+- **Fix needed in OpenCode**: Either sanitize cache paths on Linux (like Windows does) or fix the path handling bug in plugin loading
+- Workaround for users: publish to npm registry and install via `opencode plugin <package-name>`
 - Alternative: install from local filesystem with no `:` in path, then manage updates manually
 
 ---
@@ -1517,7 +1562,7 @@ Bun source is not available locally to verify the exact compiled-binary path-par
 
 ⁴ Path specs bypass `Npm.add()` entirely — they go through `resolvePathPluginTarget()` which directly returns the path as a `file://` URL.
 
-⁵ **TUI and server plugins from git specs fail on Linux:** The `:` character in cache paths (`github:maggu2810`) breaks module resolution in Bun compiled binaries (OpenCode's embedded Bun). All external module imports fail (not just `@opentui/solid`). Root cause: Bun compiled binary limitation — any `:` in the **full filesystem path** of the plugin (including ancestor directories) causes module resolution to fail. The cache path `~/.cache/opencode/packages/github:user/repo/` always contains `:`, which is chosen by the application with no known mechanism to change it. Workaround: use npm registry specs (no `:` in cache path), or local paths where the **entire installation path** (plugin directory + all ancestors) contains no `:`. See Section 9.6.2 for experiment details. **Windows is unaffected** — `sanitize()` strips `:` automatically.
+⁵ **TUI and server plugins from git specs fail on Linux:** The `:` character in cache paths (`github:maggu2810`) breaks plugin loading in OpenCode (not in Bun itself — Bun handles `:` correctly per `tests/bun-colon-repro/` reproducer). Root cause: OpenCode bug in plugin loading mechanism — likely in `pathToFileURL()`, path normalization, or `ensureRuntimePluginSupport`. The cache path `~/.cache/opencode/packages/github:user/repo/` always contains `:`. Fix needed in OpenCode to sanitize cache paths on Linux (like Windows already does via `sanitize()`). Workaround for users: use npm registry specs (no `:` in cache path), or local paths where the **entire installation path** (plugin directory + all ancestors) contains no `:`. See Section 9.6.2 for experiment details and `../tests/bun-colon-repro/README.md` for Bun reproducer proving Bun is not the cause. **Windows is unaffected** — `sanitize()` strips `:` automatically.
 
 ---
 
