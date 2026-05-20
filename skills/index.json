@@ -1,0 +1,13 @@
+{
+  "skills": [
+    {
+      "name": "agents-md-setup",
+      "files": [
+        "SKILL.md",
+        "template-agents-file-conventions.md",
+        "template-AGENTS.md",
+        "template-markdown-style-guide.md"
+      ]
+    }
+  ]
+}
