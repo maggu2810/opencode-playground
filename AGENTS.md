@@ -36,26 +36,20 @@ Static config generator for LiteLLM proxy endpoints. Outputs `opencode.jsonc` fi
 
 ## File Reading Instructions
 
-For AGENTS.md conventions and cost optimization strategy:
-Read @docs/agents-file-conventions.md
+For AGENTS.md conventions and cost optimization strategy, [read here](docs/agents-file-conventions.md)
 
-When understanding OpenCode plugin CLI commands and spec formats:
-Read @plugins/oclitellmac/docs/opencode-plugin-cli.md
+When creating or editing any markdown file in this project, [read here](docs/markdown-style-guide.md)
 
-When exploring opencode internals (SDK types, plugin APIs, provider system, TUI components):
-Read @repos/opencode/AGENTS.md
+When understanding OpenCode plugin CLI commands and spec formats, [read here](plugins/oclitellmac/docs/opencode-plugin-cli.md)
 
-When working on oclitellmac plugin:
-Read @plugins/oclitellmac/AGENTS.md
+When exploring opencode internals (SDK types, plugin APIs, provider system, TUI components), [read here](repos/opencode/AGENTS.md)
 
-When comparing LiteLLM integration approaches (field coverage across 4 implementations):
-Read @docs/litellm-integration/field-coverage-comparison.md
+When working on oclitellmac plugin, [read here](plugins/oclitellmac/AGENTS.md)
 
-When understanding the shared pipeline architecture (Python tool + TypeScript plugin):
-Read @docs/litellm-integration/shared-pipeline-architecture.md
+When comparing LiteLLM integration approaches (field coverage across 4 implementations), [read here](docs/litellm-integration/field-coverage-comparison.md)
 
-When implementing features in config-generator or oclitellmac (implementation guide):
-Read @docs/litellm-integration/implementation-guide.md
+When understanding the shared pipeline architecture (Python tool + TypeScript plugin), [read here](docs/litellm-integration/shared-pipeline-architecture.md)
 
-When understanding npm, arborist, pacote, Bun module resolution, and how OpenCode installs plugins:
-Read @docs/package-management.md
+When implementing features in config-generator or oclitellmac (implementation guide), [read here](docs/litellm-integration/implementation-guide.md)
+
+When understanding npm, arborist, pacote, Bun module resolution, and how OpenCode installs plugins, [read here](docs/package-management.md)

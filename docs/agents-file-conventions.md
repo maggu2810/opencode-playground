@@ -13,10 +13,10 @@ Large AGENTS.md files (300-1000+ lines) are loaded as system reminders on every 
 
 ## Solution
 
-Use OpenCode's `@filename` reference feature to load detailed documentation on-demand:
+Use markdown links to reference detailed documentation on-demand:
 
 ```markdown
-When working on [feature X], read @docs/[relevant-doc].md
+When working on [feature X], [read here](docs/[relevant-doc].md)
 ```
 
 The AI will:
@@ -30,12 +30,12 @@ The AI will:
 ### Root AGENTS.md (~80-100 lines)
 - Project purpose (2-3 sentences)
 - Critical constants only (API endpoints, cache paths)
-- `@` reference instructions for everything else
+- File reference instructions for everything else
 
 ### Plugin AGENTS.md (~40-60 lines each)
 - Plugin purpose (2 sentences)
 - Plugin type (server/TUI)
-- `@` reference instructions to plugin docs/
+- File reference instructions to plugin docs/
 
 ### docs/ Directory
 - Detailed implementation information
@@ -49,6 +49,7 @@ The AI will:
 The exact savings depend on your project size, but here's the general pattern:
 
 ### Before Restructuring (typical)
+
 ```
 Large AGENTS.md files: 300-1000+ lines → 10-30k tokens per message
 Multi-file projects: Often 50k+ tokens baseline
@@ -57,6 +58,7 @@ Cost on Claude Sonnet: $0.03-0.15 per message just for context
 ```
 
 ### After Restructuring (typical)
+
 ```
 Minimal AGENTS.md: 80-100 lines → 2-4k tokens baseline
 On-demand docs: 5-10k tokens only when relevant to current task
@@ -69,20 +71,19 @@ Typical savings: 70-85% reduction in context costs
 ## Pattern
 
 ### Good Example
+
 ```markdown
 ## File Reading Instructions
 
-When working on config generation or provider setup,
-read @docs/architecture.md
+When working on config generation or provider setup, [read here](docs/architecture.md)
 
-When working with API endpoints or understanding request/response schemas,
-reference @docs/api-reference.md
+When working with API endpoints or understanding request/response schemas, [read here](docs/api-reference.md)
 
-For understanding design decisions (no Azure AD, Result types, etc.),
-consult @docs/design-decisions.md
+For understanding design decisions (no Azure AD, Result types, etc.), [read here](docs/design-decisions.md)
 ```
 
 ### Anti-pattern
+
 ```markdown
 ## Architecture
 
@@ -106,24 +107,24 @@ consult @docs/design-decisions.md
    - Split by concern: architecture.md, api-reference.md, testing.md
    - Easier for AI to find relevant information
 
-4. **Don't forget to update @ references**
-   - When adding new docs, add corresponding @ instruction
+4. **Don't forget to update references**
+   - When adding new docs, add corresponding instruction
    - Keep AGENTS.md in sync with docs/ structure
 
 ## Maintenance
 
 ### Adding New Documentation
 1. Create focused doc in `docs/` (e.g., `docs/caching-strategy.md`)
-2. Add one-line @ reference in AGENTS.md:
-   ```markdown
-   When working on caching or performance optimization,
-   read @docs/caching-strategy.md
-   ```
+2. Add one-line reference in AGENTS.md:
+
+```markdown
+When working on caching or performance optimization, [read here](docs/caching-strategy.md)
+```
 
 ### Refactoring Existing Content
 1. Identify large sections in AGENTS.md (>50 lines)
 2. Extract to focused doc in `docs/`
-3. Replace with one-line @ reference
+3. Replace with one-line reference
 4. Verify AI can find content when needed
 
 ### Verifying Effectiveness
@@ -131,8 +132,3 @@ Monitor token usage in OpenCode:
 - Check token count per message (shown in UI after compaction)
 - Target: 3-8k baseline, 8-15k when working on specific features
 - If consistently >15k, audit AGENTS.md for unnecessary inline content
-
-## Further Reading
-
-- OpenCode `@` reference documentation: https://opencode.ai/docs/rules/#referencing-external-files
-- This convention file itself serves as meta-documentation for maintaining minimal AGENTS.md structures across projects
