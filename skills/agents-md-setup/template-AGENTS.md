@@ -17,20 +17,21 @@
 
 ## File Reading Instructions
 
-When working on AGENTS.md structure or cost optimization, [read here](docs/agents-file-conventions.md)
+When working on AGENTS.md structure or cost optimization, [read here](.agents/docs/agents-file-conventions.md)
 
-When creating or editing any markdown file in this project, [read here](docs/markdown-style-guide.md)
+When creating or editing any markdown file in this project, [read here](.agents/docs/markdown-style-guide.md)
 
-<!-- PLACEHOLDER: Add references below as you create docs/ files.
+<!-- PLACEHOLDER: Add references below as you create .agents/docs/ or docs/ files.
+     Agent-only docs go in .agents/docs/; docs also useful to humans go in docs/.
      One instruction per doc, triggered by relevant task context.
      Examples:
 
-     When working on architecture or system design, [read here](docs/architecture.md)
+     When working on architecture or system design, [read here](.agents/docs/architecture.md)
 
-     When working on API endpoints or request/response schemas, [read here](docs/api-reference.md)
+     When working on API endpoints or request/response schemas, [read here](.agents/docs/api-reference.md)
 
-     When running or writing tests, [read here](docs/testing-guide.md)
+     When running or writing tests, [read here](.agents/docs/testing-guide.md)
 
-     When understanding design decisions or rationale, [read here](docs/design-decisions.md)
+     When understanding design decisions or rationale, [read here](.agents/docs/design-decisions.md)
 
-     When navigating the codebase or understanding module responsibilities, [read here](docs/file-map.md) -->
+     When navigating the codebase or understanding module responsibilities, [read here](.agents/docs/file-map.md) -->

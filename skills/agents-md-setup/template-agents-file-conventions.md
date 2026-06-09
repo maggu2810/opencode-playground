@@ -15,12 +15,12 @@ Large AGENTS.md files (300-1000+ lines) are loaded as system reminders on every 
 
 Use markdown links to reference detailed documentation on-demand:
 
-    When working on [feature X], [read here](docs/[relevant-doc].md)
+    When working on [feature X], [read here](.agents/docs/[relevant-doc].md)
 
 The AI will:
 1. Read the minimal AGENTS.md (always loaded)
 2. See the instruction
-3. Call the Read tool on `docs/[relevant-doc].md` when needed
+3. Call the Read tool on `.agents/docs/[relevant-doc].md` when needed
 4. Load detailed context only when relevant to the current task
 
 ## Structure
@@ -33,14 +33,26 @@ The AI will:
 ### Plugin AGENTS.md (~40-60 lines each)
 - Plugin purpose (2 sentences)
 - Plugin type (server/TUI)
-- File reference instructions to plugin docs/
+- File reference instructions to plugin docs
 
-### docs/ Directory
-- Detailed implementation information
-- API reference documentation
-- Design decisions and rationale
-- Testing guides
-- File maps and responsibilities
+### Two doc directories
+
+**`.agents/docs/`** — agent-only documentation
+- Content that is only useful to AI agents
+- Detailed implementation information, file maps, design decisions
+- Anything an agent needs but a human would not navigate to directly
+
+**`docs/`** — human-facing documentation
+- Content that humans read in a browser or editor
+- User guides, API references, tutorials, changelogs
+- Also used when content is relevant to both humans and agents
+
+**Placement rule:** if a human would benefit from reading a file, put it in `docs/`.
+If only an agent needs it, put it in `.agents/docs/`. When in doubt, prefer `docs/`.
+
+A file belongs in `docs/` if it is reachable from `README.md` by following any chain
+of local markdown links (transitively). It does not need to be directly linked from
+`README.md` — `README.md → A.md → B.md` makes `B.md` human-reachable.
 
 ## Cost Impact
 
@@ -68,11 +80,11 @@ The exact savings depend on your project size, but here's the general pattern:
 
     ## File Reading Instructions
 
-    When working on config generation or provider setup, [read here](docs/architecture.md)
+    When working on config generation or provider setup, [read here](.agents/docs/architecture.md)
 
-    When working with API endpoints or understanding request/response schemas, [read here](docs/api-reference.md)
+    When working with API endpoints or understanding request/response schemas, [read here](.agents/docs/api-reference.md)
 
-    For understanding design decisions (no Azure AD, Result types, etc.), [read here](docs/design-decisions.md)
+    For understanding design decisions (no Azure AD, Result types, etc.), [read here](.agents/docs/design-decisions.md)
 
 ### Anti-pattern
 
@@ -86,11 +98,11 @@ The exact savings depend on your project size, but here's the general pattern:
 
 ## Anti-patterns to Avoid
 
-1. **Don't duplicate content** between AGENTS.md and docs/
+1. **Don't duplicate content** between AGENTS.md and `.agents/docs/`
    - Extract once, reference from AGENTS.md
 
 2. **Don't include implementation details in AGENTS.md**
-   - "How to implement X" belongs in docs/
+   - "How to implement X" belongs in `.agents/docs/`
    - AGENTS.md should only point to the right doc
 
 3. **Don't create catch-all documentation files**
@@ -99,19 +111,24 @@ The exact savings depend on your project size, but here's the general pattern:
 
 4. **Don't forget to update references**
    - When adding new docs, add corresponding instruction
-   - Keep AGENTS.md in sync with docs/ structure
+   - Keep AGENTS.md in sync with `.agents/docs/` structure
+
+5. **Don't put agent-only docs in `docs/`**
+   - If a human has no reason to read a file, it belongs in `.agents/docs/`
+   - Files in `docs/` should always be reachable from `README.md`
 
 ## Maintenance
 
-### Adding New Documentation
-1. Create focused doc in `docs/` (e.g., `docs/caching-strategy.md`)
-2. Add one-line reference in AGENTS.md:
+### Adding New Agent Documentation
+1. Decide: is this file useful to humans? If yes → `docs/`. If no → `.agents/docs/`.
+2. Create a focused doc (e.g., `.agents/docs/caching-strategy.md`)
+3. Add one-line reference in AGENTS.md:
 
-       When working on caching or performance optimization, [read here](docs/caching-strategy.md)
+       When working on caching or performance optimization, [read here](.agents/docs/caching-strategy.md)
 
 ### Refactoring Existing Content
 1. Identify large sections in AGENTS.md (>50 lines)
-2. Extract to focused doc in `docs/`
+2. Extract to a focused doc in `.agents/docs/` (or `docs/` if human-relevant)
 3. Replace with one-line reference
 4. Verify AI can find content when needed
 

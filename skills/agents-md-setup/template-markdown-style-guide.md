@@ -91,4 +91,4 @@ Do not use four-space indentation as a code block substitute.
 
 ## Further Reading
 
-When working on AGENTS.md structure or cost optimization, [read here](docs/agents-file-conventions.md)
+When working on AGENTS.md structure or cost optimization, [read here](.agents/docs/agents-file-conventions.md)
