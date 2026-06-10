@@ -65,6 +65,12 @@ For architecture see @docs/architecture.md
 
 [read here](docs/architecture.md)
 ← missing trigger condition; the agent has no signal for when to load this
+
+See [open-questions.md](docs/open-questions.md)
+← filename with extension as link text; breaks in HTML/Confluence output
+
+See [open-questions](docs/open-questions.md)
+← bare slug as link text; gives no meaningful information to the reader
 ```
 
 ### Rules for the trigger condition
@@ -74,9 +80,16 @@ For architecture see @docs/architecture.md
 - Do not repeat the filename in the trigger text if the link text is already clear
 
 ### Rules for the link text
-- `[read here]` is the default for instruction-style references
+- `[read here]` is the default for instruction-style references (e.g. in AGENTS.md)
 - Use descriptive text if it adds clarity beyond what the trigger already says
-- Never use the raw filename as link text — the path already contains that information
+- Never use a filename (with or without extension) as link text
+  - Bad: `[open-questions.md](docs/open-questions.md)`
+  - Bad: `[open-questions](docs/open-questions.md)`
+  - Good: `[Open Questions](docs/open-questions.md)`
+  - Reason: markdown is often converted to HTML, Confluence wiki pages, or other
+    formats. The `.md` extension is meaningless or broken-looking in rendered output,
+    and a bare slug gives no information to the reader. The link target already
+    encodes the filename — link text should convey meaning.
 
 ## Code Blocks
 
@@ -91,4 +104,4 @@ Do not use four-space indentation as a code block substitute.
 
 ## Further Reading
 
-When working on AGENTS.md structure or cost optimization, [read here](docs/agents-file-conventions.md)
+When working on AGENTS.md structure or cost optimization, [read here](.agents/docs/agents-file-conventions.md)

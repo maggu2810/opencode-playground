@@ -85,6 +85,7 @@ in `.agents/docs/` every time:
 3. **Old @ref syntax** — scan `AGENTS.md` and all files in `docs/` and `.agents/docs/`
    for any occurrence of the pattern `@filename` or `Read @` used as a file reference.
    Suggest replacing with `[descriptive text](path)` per the markdown style guide.
+   See also check 7 for related bad link text violations.
 
 4. **Size warning** — if `AGENTS.md` exceeds 100 lines, warn the user and identify
    any inline section larger than 50 lines as a candidate for extraction to
@@ -121,3 +122,18 @@ in `.agents/docs/` every time:
    section headings that appear in more than one file. Flag each duplicate heading
    as a candidate for consolidation: extract to the most appropriate single file
    and replace the duplicate with a link.
+
+7. **Filename as link text** — scan all `.md` files in `docs/`, `.agents/docs/`,
+   `AGENTS.md`, and `README.md` for markdown links where the link text is a filename.
+   Two patterns to grep for:
+   - Extension present: `\[[^\]]*\.(md|txt|html)[^\]]*\]\(` — link text contains a
+     file extension (e.g. `[open-questions.md](...)`)
+   - Bare slug: link text matches the basename of the link target without extension
+     (e.g. `[open-questions](docs/open-questions.md)`)
+   For each violation, suggest replacing the link text with a human-readable title.
+   Examples:
+   - Bad: `[open-questions.md](docs/open-questions.md)`
+   - Bad: `[open-questions](docs/open-questions.md)`
+   - Good: `[Open Questions](docs/open-questions.md)`
+   Reason: markdown is often converted to HTML, Confluence, or other formats where
+   `.md` extensions are meaningless or broken-looking in rendered link labels.
