@@ -7,9 +7,9 @@ description: Review a git changeset against the project coding standard and
 
 # Changeset Review
 
-Check a git changeset against the project coding standard, conventions, and
-available formatting/linting tools. Always work through the phases below in
-order. Never skip a phase.
+Check a git changeset or the full working tree against the project coding
+standard, conventions, and available formatting/linting tools. Always work
+through the phases below in order. Never skip a phase.
 
 ---
 
@@ -31,41 +31,104 @@ order. Never skip a phase.
 
 ---
 
-## Phase 1 — Base Ref Selection
+## Phase 1 — Mode and Scope Selection
 
 **If the user's message already contains a git ref** (commit SHA, branch name,
-or tag) use it directly as `<base>` and skip to Phase 2.
+or tag) use it directly as `<base>`, set mode to **diff**, and skip to Phase 2.
 
-**Otherwise**, build an interactive selector:
+**Otherwise**, present the following selector using the `question` tool
+(single-select):
 
-1. Run: `git log --oneline -20`
-2. Prepend one synthetic entry for uncommitted changes.
-3. Append one sentinel entry `[Load next 20]`.
-4. Present the full list using the `question` tool (single-select):
+```
+HEAD            uncommitted working-tree changes (staged + unstaged)
+[Full scan]     check entire working tree — choose a directory scope next
+────────────────────────────────────────────────────────────────────────
+a1b2c3d  (HEAD -> main, origin/main) fix: correct buffer overflow
+b2c3d4e  feat: add retry logic
+c3d4e5f  chore: update dependencies
+...
+[Load next 20]
+```
 
-   ```
-   HEAD        uncommitted working-tree changes (staged + unstaged)
-   a1b2c3d  (HEAD -> main, origin/main) fix: correct buffer overflow
-   b2c3d4e  feat: add retry logic
-   ...
-   [Load next 20]
-   ```
-
-5. If the user picks `[Load next 20]`:
-   - Increment the skip offset by 20 (first page: `--skip=20`, second: `--skip=40`, …).
-   - Run: `git log --oneline --skip=<offset> -20`
-   - Present a new list with the same `[Load next 20]` option appended.
-     Omit `[Load next 20]` when `git log` returns fewer than 20 entries
-     (history exhausted).
-   - Repeat until the user selects a ref.
-
-The selected entry's SHA, or the literal string `HEAD`, becomes `<base>`.
+`HEAD` and `[Full scan]` are always pinned at the top, separated from the
+commit list by a divider. The commit list is produced by `git log --oneline -20`.
 
 ---
 
-## Phase 2 — Build the Diff
+### Branch A — Diff mode (`HEAD` or a commit selected)
 
-Run the appropriate diff command based on `<base>`:
+Set `<base>` to the selected SHA, or the literal string `HEAD` if that entry
+was chosen. Set mode to **diff**. Proceed to Phase 2.
+
+**Paging:** if the user picks `[Load next 20]`, increment the skip offset by 20
+and re-run `git log --oneline --skip=<offset> -20`. Present a fresh selector
+with the same pinned entries at the top. Omit `[Load next 20]` when the log
+returns fewer than 20 entries (history exhausted). Repeat until the user
+selects a ref.
+
+---
+
+### Branch B — Full scan mode (`[Full scan]` selected)
+
+Set mode to **full-scan**. Navigate to a directory scope as follows.
+
+#### Directory tree navigation
+
+Run `tree -d -L 1` from the repo root. If `tree` is not installed, fall back to
+`find . -mindepth 1 -maxdepth 1 -type d`. Present a `question` list:
+
+```
+.                              (entire repository)
+────────────────────────────────────────────────────────────────────────
+./cloud-connector              [has subdirectories]
+./knbase                       [has subdirectories]
+./knlog
+./tests
+────────────────────────────────────────────────────────────────────────
+[Go deeper from a subdirectory]
+[Show one more level  (currently L1)]
+```
+
+Determine whether a directory has subdirectories by running
+`find <dir> -mindepth 1 -maxdepth 1 -type d` for each listed entry and marking
+it `[has subdirectories]` if the output is non-empty.
+
+#### Entry behaviour
+
+| Entry | Behaviour when selected |
+|---|---|
+| `.` (entire repository) | Use immediately as `<scope>` |
+| Leaf directory (no marker) | Use immediately as `<scope>` |
+| Non-leaf `[has subdirectories]` | Follow-up question: "Use `<dir>` as scope, or explore inside it?" |
+| `[Go deeper from a subdirectory]` | Follow-up question listing only the non-leaf dirs: "Which directory to zoom into?" Re-run `tree -d -L 1` rooted at the chosen dir and present a new navigation list. |
+| `[Show one more level (currently LN)]` | Re-run `tree -d -L (N+1)` from the same root. Update the label to `currently L(N+1)`. |
+
+#### Non-leaf "Use or explore?" follow-up
+
+When a non-leaf directory is selected:
+
+```
+You selected ./cloud-connector/src  [has subdirectories]
+→ Use this as the scan scope (scans all subdirectories recursively)?
+→ Explore inside it first
+```
+
+- **Use as scope** → `<scope>` is confirmed, proceed to Phase 2.
+- **Explore inside** → re-run `tree -d -L 1` rooted at the selected dir,
+  present a new navigation list with the same sentinel entries.
+
+#### Scope confirmed
+
+The scan always covers `<scope>` **fully and recursively** — there is no depth
+limit on the scan itself.
+
+---
+
+## Phase 2 — Build the File Set
+
+### Diff mode
+
+Run the diff command for `<base>`:
 
 | `<base>` | Command |
 |---|---|
@@ -74,7 +137,21 @@ Run the appropriate diff command based on `<base>`:
 
 Also run `git diff --name-only <base>` to obtain the changed file list.
 
-Classify each changed file:
+If `git diff` produces no output, report "No changes detected" and stop.
+
+### Full-scan mode
+
+Collect files under `<scope>` recursively:
+
+```bash
+find <scope> -type f \( \
+  -name "*.cpp" -o -name "*.c" -o -name "*.cc" -o -name "*.cxx" \
+  -o -name "*.h" -o -name "*.hpp" -o -name "*.hh" \
+  -o -name "CMakeLists.txt" -o -name "*.cmake" \
+\)
+```
+
+### File classification (both modes)
 
 | Category | Extensions / Names |
 |---|---|
@@ -98,45 +175,57 @@ the Phase 5 report.
 
 - **Detect:** `.clang-format` exists at repo root AND `clang-format` binary is
   reachable (`which clang-format`).
-- **Run:** `clang-format --dry-run --Werror <changed-cpp-files>`
-  (one invocation with all changed C/C++ files as arguments)
+- **Run (diff mode):** `clang-format --dry-run --Werror <changed-cpp-files>`
+- **Run (full-scan mode):** `clang-format --dry-run --Werror <all-cpp-files-in-scope>`
 - **Skip reasons:** `.clang-format` absent · `clang-format` binary not found ·
-  no C/C++ files changed
+  no C/C++ files in scope
 
 ### clang-tidy
 
 - **Detect:** `.clang-tidy` exists at repo root AND `clang-tidy` binary is
   reachable AND at least one `compile_commands.json` is found anywhere under
-  the repo root (search with `find . -name compile_commands.json -not -path '*/\.*'`).
-- **Run:** `clang-tidy -p <dir-containing-compile_commands.json> <changed-cpp-files>`
+  the repo root (`find . -name compile_commands.json -not -path '*/\.*'`).
   If multiple compile DBs are found, prefer the one in a directory named
   `build`, then take the first match.
+- **Full-scan upfront warning:** before running, count the C/C++ files in scope.
+  If more than 20, ask:
+  > "Full scan found `<N>` C/C++ files. Running clang-tidy on all of them may
+  > take several minutes. Continue with clang-tidy, or skip it for this run?"
+  If the user skips, record `"clang-tidy: skipped by user (large full scan)"`.
+- **Run (diff mode):** `clang-tidy -p <build-dir> <changed-cpp-files>`
+- **Run (full-scan mode):** `clang-tidy -p <build-dir> <all-cpp-files-in-scope>`
 - **Skip reasons:** `.clang-tidy` absent · `clang-tidy` binary not found ·
-  no `compile_commands.json` found · no C/C++ files changed
+  no `compile_commands.json` found · no C/C++ files in scope ·
+  skipped by user (large full scan)
 
 ### cmake-formatter
 
 - **Detect:** `./cmake-formatter` script exists at the repo root.
 - **Run:** `./cmake-formatter --check --diff`
-  This runs against all CMake files in the repo (by design). After capturing
+  This runs against all CMake files in the repo by design. After capturing
   output, filter it to retain only sections that reference files appearing in
-  the changeset file list from Phase 2.
+  the current file set (diff mode: changed CMake files; full-scan mode: CMake
+  files under `<scope>`).
 - **Skip reasons:** `./cmake-formatter` script absent · execution error
-  (capture stderr as the reason) · no CMake files changed
+  (capture stderr as the reason) · no CMake files in scope
 
 ---
 
 ## Phase 4 — LLM Review
 
-For each changed file, read the diff hunks and evaluate the changes against
-the coding standard loaded in Phase 0.
+For each file in the current file set, read the content (diff mode: diff hunks;
+full-scan mode: full file content) and evaluate it against the coding standard
+loaded in Phase 0.
 
 Guidelines:
 
-- Focus on violations detectable from the diff alone.
-- Read unchanged surrounding context only when necessary to judge a violation
-  (e.g. to see a class declaration for a naming violation on a member).
-- For each finding, note: file, line, category, description, the specific
+- Focus on violations detectable from the available content.
+- In diff mode, read unchanged surrounding context only when necessary to judge
+  a violation (e.g. to see a class declaration for a naming violation on a
+  member).
+- In full-scan mode, process files one at a time and accumulate findings rather
+  than loading all files at once.
+- For each finding, record: file, line, category, description, the specific
   section of the standard it violates, and a concrete suggested fix.
 - Do not flag style issues already covered by clang-format or clang-tidy
   findings — avoid duplicates.
@@ -147,14 +236,18 @@ Guidelines:
 
 ### Direct output (always shown in chat)
 
-Produce the following structured report:
-
 ```
 ## Changeset Review
-Base: <base>  →  HEAD   |   Date: YYYY-MM-DD
+Mode: Diff   Base: <base>  →  HEAD   |   Date: YYYY-MM-DD
 Files reviewed: N   |   Errors: K   |   Warnings: L   |   Skipped tools: M
 
-────────────────────────────────────────────
+  (or for full-scan:)
+
+## Changeset Review
+Mode: Full scan   Scope: <scope>   |   Date: YYYY-MM-DD
+Files reviewed: N   |   Errors: K   |   Warnings: L   |   Skipped tools: M
+
+────────────────────────────────────────────────────────────────────────
 ### Findings
 
 #### <path/to/file.cpp>
@@ -167,18 +260,17 @@ Files reviewed: N   |   Errors: K   |   Warnings: L   |   Skipped tools: M
   [WARNING] line 12   CMake format           Indentation inconsistency
                       Ref: cmake-formatter   Auto-fixable: ./cmake-formatter
 
-────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────
 ### Clean files
 <file1>, <file2>, …   (or "None" if every file has findings)
 
-────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────
 ### Skipped tools
   clang-tidy    no compile_commands.json found in any build directory
-  …
 
 (Omit this section entirely if no tools were skipped.)
 
-────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────
 ### Verdict:  PASS | PASS WITH WARNINGS | FAIL
               (<K> errors · <L> warnings)
 ```
@@ -202,21 +294,18 @@ If **Yes**: ask a second `question`:
 
 | Option | Description |
 |---|---|
-| **A — Per-file** | One `##` section per changed file, findings as a table inside. Mirrors the direct output. Good for file-by-file PR review. |
-| **B — Per-category** | Top-level sections `## Naming`, `## Formatting`, `## CMake Format`, etc. Each section is a table with columns `File \| Line \| Description`. Good for seeing the full scope of one issue type across the changeset. |
+| **A — Per-file** | One `##` section per file, findings as a table inside. Mirrors the direct output. Good for file-by-file PR review. |
+| **B — Per-category** | Top-level sections `## Naming`, `## Formatting`, `## CMake Format`, etc. Each is a table with columns `File \| Line \| Description`. Good for seeing the full scope of one issue type across all files. |
 | **C — Checklist** | Each finding as `- [ ] \`file:line\` — description` grouped by file under `##` headers. Paste-ready for a PR description or issue tracker. |
 
-Write the file to:
+Write the file to `<repo-root>/` using this naming scheme:
 
-```
-<repo-root>/review-<first-7-chars-of-base-sha>-<YYYY-MM-DD>.md
-```
-
-When `<base>` is `HEAD`, use the literal string `head` in the filename:
-
-```
-<repo-root>/review-head-<YYYY-MM-DD>.md
-```
+| Mode | Filename |
+|---|---|
+| Diff, base = `HEAD` | `review-head-<YYYY-MM-DD>.md` |
+| Diff, base = SHA | `review-<sha7>-<YYYY-MM-DD>.md` |
+| Full scan, scope = `.` | `review-fullscan-root-<YYYY-MM-DD>.md` |
+| Full scan, scope = `./some/dir` | `review-fullscan-<dir-slug>-<YYYY-MM-DD>.md` (strip leading `./`, replace `/` with `-`) |
 
 ---
 
@@ -227,5 +316,6 @@ When `<base>` is `HEAD`, use the literal string `head` in the filename:
 | Coding standard not in context and not provided | Ask via `question` tool; wait; do not proceed without an answer |
 | Any tool binary missing | Record skip with reason; continue |
 | Tool execution returns non-zero | Record skip with stderr as reason; continue |
-| `git diff` produces no output | Report "No changes detected" and stop |
+| `git diff` produces no output (diff mode) | Report "No changes detected" and stop |
+| `find` returns no files (full-scan mode) | Report "No reviewable files found in `<scope>`" and stop |
 | All files are "Other" type | Skip all three tools; note in Skipped tools section |
