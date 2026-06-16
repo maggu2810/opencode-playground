@@ -8,6 +8,12 @@
         "template-AGENTS.md",
         "template-markdown-style-guide.md"
       ]
+    },
+    {
+      "name": "review-changeset",
+      "files": [
+        "SKILL.md"
+      ]
     }
   ]
 }
