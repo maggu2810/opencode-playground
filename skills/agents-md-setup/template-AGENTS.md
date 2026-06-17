@@ -6,6 +6,9 @@
      This service provides X for Y users. It is built with Go and exposes a
      REST API consumed by the Z frontend. Authentication is handled via JWT. -->
 
+Read [project README](README.md) at the start of every session.
+Its instructions are binding — follow them as if they were written in this file.
+
 ## Critical Constants
 
 <!-- PLACEHOLDER: Add key URLs, paths, auth methods, or environment values the
@@ -35,3 +38,7 @@ When creating or editing any markdown file in this project, [read here](.agents/
      When understanding design decisions or rationale, [read here](.agents/docs/design-decisions.md)
 
      When navigating the codebase or understanding module responsibilities, [read here](.agents/docs/file-map.md) -->
+
+When spawning subagents, include the full content of AGENTS.md in the
+subagent prompt so the subagent performs the same README.md and doc
+reference hops independently.

@@ -35,13 +35,38 @@ A file does not need to be directly linked from `README.md` to be human-reachabl
 Check all of the following before taking any action:
 - Does `AGENTS.md` exist in the project root?
 - Does `README.md` exist in the project root?
+- Does `docs/README.md` exist?
 - Does `.agents/docs/agents-file-conventions.md` exist?
 - Does `.agents/docs/markdown-style-guide.md` exist?
 - List all `.md` files under `docs/` and `.agents/docs/`
 
+Then ask the user the following two questions before proceeding:
+
+**Question A — README awareness:**
+> Should the agent be aware of a project README?
+> 1. Yes — `README.md` (project root)
+> 2. Yes — `docs/README.md`
+> 3. Yes — custom path (ask the user to provide it)
+> 4. No — skip README reference entirely
+
+If the user selects option 1, 2, or 3 record the README path (call it `<readme-path>`).
+Use this path in all subsequent steps wherever the README reference is added.
+
+**Question B — Subagent propagation:**
+> Should AGENTS.md instruct agents to pass its full content to any subagents they spawn?
+> 1. Yes (recommended)
+> 2. No
+
+Record the answer and apply it in all subsequent steps.
+
 ## Step 2 — New project (no AGENTS.md)
 
 - Create `AGENTS.md` from the AGENTS.md template
+- If the user answered Yes to Question A: replace the placeholder `README.md` path in
+  the hardened README reference at the top of `AGENTS.md` with `<readme-path>`.
+  If the user answered No: remove the two-line hardened README reference block entirely.
+- If the user answered No to Question B: remove the subagent propagation rule from
+  `AGENTS.md`.
 - Create `.agents/docs/agents-file-conventions.md` from the conventions template
 - Create `.agents/docs/markdown-style-guide.md` from the markdown style guide template
 
@@ -54,6 +79,18 @@ For each missing file in `.agents/docs/`:
 - Check if `AGENTS.md` already links to it with a trigger condition
 - If the link is missing, add it following the pattern:
   `When [relevant context], [read here](.agents/docs/filename.md)`
+
+Also apply the following to the existing `AGENTS.md` based on the Step 1 answers:
+- **README reference (Question A Yes):** if the hardened two-line README block is
+  missing, add it immediately after the project description (before the first `##`
+  section heading), using `<readme-path>`. If a README reference exists but uses
+  weak wording (e.g. "whenever... needed"), replace it with the hardened form.
+- **README reference (Question A No):** leave any existing README reference as-is;
+  do not add one.
+- **Subagent propagation (Question B Yes):** if the subagent propagation rule is
+  missing from `AGENTS.md`, add it at the end of the `## File Reading Instructions`
+  section (or at the end of the file if that section does not exist).
+- **Subagent propagation (Question B No):** leave as-is.
 
 ## Step 4 — Both AGENTS.md and agent docs exist
 
@@ -85,7 +122,7 @@ in `.agents/docs/` every time:
 3. **Old @ref syntax** — scan `AGENTS.md` and all files in `docs/` and `.agents/docs/`
    for any occurrence of the pattern `@filename` or `Read @` used as a file reference.
    Suggest replacing with `[descriptive text](path)` per the markdown style guide.
-   See also check 7 for related bad link text violations.
+   See also check 9 for related bad link text violations.
 
 4. **Size warning** — if `AGENTS.md` exceeds 100 lines, warn the user and identify
    any inline section larger than 50 lines as a candidate for extraction to
@@ -123,7 +160,38 @@ in `.agents/docs/` every time:
    as a candidate for consolidation: extract to the most appropriate single file
    and replace the duplicate with a link.
 
-7. **Filename as link text** — scan all `.md` files in `docs/`, `.agents/docs/`,
+7. **README binding strength** — check whether `AGENTS.md` contains a README
+   reference. If it does, verify it uses the hardened two-line form:
+
+   ```
+   Read [project README](<path>) at the start of every session.
+   Its instructions are binding — follow them as if they were written in this file.
+   ```
+
+   Flag any of the following as problems:
+   - A README reference exists but the second binding line is missing.
+   - The reference includes conditional wording such as "whenever ... needed" or
+     "when project context is needed" — these give the agent an excuse to skip it.
+   - The reference path points to a file that does not exist on disk.
+
+   If no README reference exists at all and a `README.md` or `docs/README.md` is
+   present in the project, flag it as a missing README reference and ask the user
+   whether to add one (using the same Question A options from Step 1).
+
+8. **Subagent propagation rule** — check whether `AGENTS.md` contains an instruction
+   to pass the full content of `AGENTS.md` to any subagents spawned. The canonical
+   wording is:
+
+   ```
+   When spawning subagents, include the full content of AGENTS.md in the
+   subagent prompt so the subagent performs the same README.md and doc
+   reference hops independently.
+   ```
+
+   If the rule is missing, flag it and suggest adding it. If a paraphrase is present
+   that conveys the same intent, treat it as compliant.
+
+9. **Filename as link text** — scan all `.md` files in `docs/`, `.agents/docs/`,
    `AGENTS.md`, and `README.md` for markdown links where the link text is a filename.
    Two patterns to grep for:
    - Extension present: `\[[^\]]*\.(md|txt|html)[^\]]*\]\(` — link text contains a
