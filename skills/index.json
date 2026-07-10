@@ -7,13 +7,15 @@
         "template-agents-file-conventions.md",
         "template-AGENTS.md",
         "template-markdown-style-guide.md"
-      ]
+      ],
+      "version": "09e29a7f76eaa73d133d33cb0f1ff7bc37fcf7aeb4d843e3459cde00803cfe70"
     },
     {
       "name": "review-changeset",
       "files": [
         "SKILL.md"
-      ]
+      ],
+      "version": "0615f33256e2ed6a52d90301fbead29aa411d1a8e62963a61ec995c17d775e42"
     }
   ]
 }

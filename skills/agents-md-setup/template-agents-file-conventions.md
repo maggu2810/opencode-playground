@@ -4,13 +4,6 @@
 
 Keep AGENTS.md files as minimal as possible to reduce per-message token costs in OpenCode AI conversations.
 
-## Problem
-
-Large AGENTS.md files (300-1000+ lines) are loaded as system reminders on every AI message, resulting in:
-- 20k-30k+ tokens per message baseline cost
-- $0.06-0.09 per message on Claude Sonnet (before any actual work)
-- Accumulated cost over long sessions (50-100 messages = $3-9 just for context)
-
 ## Solution
 
 Use markdown links to reference detailed documentation on-demand:
@@ -53,26 +46,6 @@ If only an agent needs it, put it in `.agents/docs/`. When in doubt, prefer `doc
 A file belongs in `docs/` if it is reachable from `README.md` by following any chain
 of local markdown links (transitively). It does not need to be directly linked from
 `README.md` — `README.md → A.md → B.md` makes `B.md` human-reachable.
-
-## Cost Impact
-
-The exact savings depend on your project size, but here's the general pattern:
-
-### Before Restructuring (typical)
-
-    Large AGENTS.md files: 300-1000+ lines → 10-30k tokens per message
-    Multi-file projects: Often 50k+ tokens baseline
-    Cost on Claude Sonnet: $0.03-0.15 per message just for context
-    50-message session: $1.50-7.50+ just for AGENTS.md injection
-
-### After Restructuring (typical)
-
-    Minimal AGENTS.md: 80-100 lines → 2-4k tokens baseline
-    On-demand docs: 5-10k tokens only when relevant to current task
-    Cost on Claude Sonnet: $0.006-0.012 baseline, $0.018-0.036 with docs loaded
-    50-message session: $0.30-1.80 (mixed usage)
-
-    Typical savings: 70-85% reduction in context costs
 
 ## Pattern
 
