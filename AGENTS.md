@@ -12,6 +12,15 @@ internal APIs, plugin systems, and TUI components. Working plugin examples are u
 - Plugin entry: `plugins/{name}/src/index.ts` or `plugins/{name}/src/index.tsx` (for TUI)
 - Installation: `opencode plugin <path>` (CLI command)
 
+## Skill Source of Truth
+
+This repository's `skills/` directory is the authoritative, tracked source
+for all skills owned by this project (e.g. `agents-md-setup`,
+`review-changeset`). When working on any skill, always edit the files under
+`skills/` in this repository. Never edit cached or installed copies (e.g.
+`~/.cache/opencode/skills/`) — those are ephemeral, untracked, and any
+changes made there are lost and do not propagate back to this repo.
+
 ## Plugin Projects
 
 ### oclitellmac
