@@ -79,6 +79,9 @@ For each missing file in `.agents/docs/`:
 - Check if `AGENTS.md` already links to it with a trigger condition
 - If the link is missing, add it following the pattern:
   `When [relevant context], [read here](.agents/docs/filename.md)`
+- Only ever add links to `.agents/docs/` files here — links into `docs/` belong
+  in `docs/README.md`, not AGENTS.md (see the "AGENTS.md must not duplicate
+  docs/README.md routing" rule in the conventions template).
 
 Also apply the following to the existing `AGENTS.md` based on the Step 1 answers:
 - **README reference (Question A Yes):** if the hardened two-line README block is
@@ -205,3 +208,12 @@ in `.agents/docs/` every time:
    - Good: `[Open Questions](docs/open-questions.md)`
    Reason: markdown is often converted to HTML, Confluence, or other formats where
    `.md` extensions are meaningless or broken-looking in rendered link labels.
+
+10. **AGENTS.md docs/ routing duplication** — within AGENTS.md's "File Reading
+    Instructions" section only (not the hardened README reference block above
+    it), grep for markdown link targets. Any target path under `docs/` (e.g.
+    `docs/foo.md`, `../docs/foo.md`) is a violation: routing into `docs/`
+    content belongs in `docs/README.md`'s own table of contents, not in
+    AGENTS.md. Flag each such link and suggest removing it from AGENTS.md,
+    ensuring the equivalent entry exists in `docs/README.md` instead. Links
+    to `.agents/docs/` in this section are correct and should not be flagged.

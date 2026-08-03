@@ -47,6 +47,38 @@ A file belongs in `docs/` if it is reachable from `README.md` by following any c
 of local markdown links (transitively). It does not need to be directly linked from
 `README.md` — `README.md → A.md → B.md` makes `B.md` human-reachable.
 
+## README structure
+
+Many projects publish `docs/` to both GitHub and Confluence (e.g. via
+[markdown-to-confluence](https://pypi.org/project/markdown-to-confluence/)).
+This means `docs/README.md` is not just a docs index — it is also a
+Confluence page, often carrying `<!-- confluence-page-id -->` and
+`<!-- confluence-space-key -->` metadata comments. Keep the root `README.md`
+and `docs/README.md` in separate roles:
+
+**Root `README.md`** — the GitHub project landing page
+- A short, generic overview (2-3 sentences)
+- A link to `docs/README.md` for the full documentation
+- Repository-specific content that must NOT be synced to Confluence:
+  submodule/installation instructions, contribution workflow, sync
+  instructions, licensing, etc.
+
+**`docs/README.md`** — the canonical documentation hub
+- The full table of contents / index for everything under `docs/`
+- Synced to Confluence as the space's root page
+- Contains only content relevant to the published documentation, not
+  repository mechanics
+
+### AGENTS.md must not duplicate docs/README.md routing
+
+AGENTS.md's "File Reading Instructions" section is reserved for `.agents/docs/`
+(agent-only) references. Routing into `docs/` content belongs in `docs/README.md`
+only — AGENTS.md's hardened README reference already leads to `docs/README.md`,
+whether directly (when `<readme-path>` is `docs/README.md`) or via the root
+`README.md`, which links onward to it. A duplicate routing table in AGENTS.md's
+"File Reading Instructions" section would therefore be redundant and would
+drift out of sync as docs are added or renamed.
+
 ## Pattern
 
 ### Good Example
