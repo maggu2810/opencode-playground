@@ -5,6 +5,9 @@ code is available as a git submodule at `repos/opencode/` (branch: dev) for insp
 internal APIs, plugin systems, and TUI components. Working plugin examples are under
 `plugins/`.
 
+Read [project README](README.md) at the start of every session.
+Its instructions are binding — follow them as if they were written in this file.
+
 ## Critical Constants
 
 - opencode repo: `repos/opencode/` (git submodule, branch: dev)
@@ -45,9 +48,9 @@ Static config generator for LiteLLM proxy endpoints. Outputs `opencode.jsonc` fi
 
 ## File Reading Instructions
 
-For AGENTS.md conventions and cost optimization strategy, [read here](docs/agents-file-conventions.md)
+For AGENTS.md conventions and cost optimization strategy, [read here](.agents/docs/agents-file-conventions.md)
 
-When creating or editing any markdown file in this project, [read here](docs/markdown-style-guide.md)
+When creating or editing any markdown file in this project, [read here](.agents/docs/markdown-style-guide.md)
 
 When understanding OpenCode plugin CLI commands and spec formats, [read here](plugins/oclitellmac/docs/opencode-plugin-cli.md)
 
@@ -55,10 +58,6 @@ When exploring opencode internals (SDK types, plugin APIs, provider system, TUI 
 
 When working on oclitellmac plugin, [read here](plugins/oclitellmac/AGENTS.md)
 
-When comparing LiteLLM integration approaches (field coverage across 4 implementations), [read here](docs/litellm-integration/field-coverage-comparison.md)
-
-When understanding the shared pipeline architecture (Python tool + TypeScript plugin), [read here](docs/litellm-integration/shared-pipeline-architecture.md)
-
-When implementing features in config-generator or oclitellmac (implementation guide), [read here](docs/litellm-integration/implementation-guide.md)
-
-When understanding npm, arborist, pacote, Bun module resolution, and how OpenCode installs plugins, [read here](docs/package-management.md)
+When spawning subagents, include the full content of AGENTS.md in the
+subagent prompt so the subagent performs the same README.md and doc
+reference hops independently.

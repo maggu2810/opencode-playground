@@ -102,6 +102,41 @@ echo "hello"
 
 Do not use four-space indentation as a code block substitute.
 
+## Numbering
+
+Never hand-number headings. Use plain `#`, `##`, `###` hierarchy with
+descriptive titles only.
+
+The same applies to table-of-contents entries and any ordinal list that
+mirrors document structure — these are generated/rendered artifacts, not
+source content to hand-maintain.
+
+### Rule
+
+Inserting or reordering a section forces renumbering every sibling heading
+that follows. Let a render or build step (static site generator, Pandoc,
+Confluence auto-numbering, etc.) generate numbers if display requires them.
+
+### Good example
+
+```markdown
+## Setup
+
+## Configuration
+
+## Deployment
+```
+
+### Bad example
+
+```markdown
+## 1. Setup
+
+## 2. Configuration
+
+## 3. Deployment
+```
+
 ## Further Reading
 
 When working on AGENTS.md structure or cost optimization, [read here](.agents/docs/agents-file-conventions.md)

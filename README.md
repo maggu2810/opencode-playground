@@ -1,5 +1,16 @@
 # Notes
 
+## Documentation
+
+- [Package Management](docs/package-management.md) — npm, arborist, pacote, and
+  Bun module resolution, and how OpenCode installs plugins
+- [LiteLLM Integration Field Coverage Comparison](docs/litellm-integration/field-coverage-comparison.md) —
+  field coverage across the 4 LiteLLM integration implementations
+- [LiteLLM Integration Shared Pipeline Architecture](docs/litellm-integration/shared-pipeline-architecture.md) —
+  the shared pipeline architecture used by the Python tool and TypeScript plugin
+- [LiteLLM Integration Implementation Guide](docs/litellm-integration/implementation-guide.md) —
+  implementation guide for config-generator and oclitellmac
+
 ## opencode on Termux on Android
 
 https://github.com/Hope2333/opencode-termux/
