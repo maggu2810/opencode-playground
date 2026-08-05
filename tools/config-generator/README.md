@@ -7,8 +7,8 @@ Generate `opencode.jsonc` configuration from a LiteLLM proxy's model endpoints.
 - 🔍 **Model Discovery**: Fetches `/public/model_hub` (no auth) and `/v1/model/info` (auth required)
 - 🗺️ **Field Mapping**: Maps LiteLLM fields to OpenCode provider/model format
 - 🎯 **Smart Filtering**: Blacklists non-chat models by default (embedding, TTS, image gen, etc.)
-- 🔧 **LiteLLM Compatibility**: Sets `litellmProxy: true` option for automatic `_noop` tool injection
-- 📦 **Modular Architecture**: Shared pipeline with `oclitellmac-server` TypeScript plugin
+- ⚙️ **Provider Options**: Optionally sets `timeout`, `chunkTimeout`, `headerTimeout`, `setCacheKey`, and `env`
+- 📦 **Modular Architecture**: Shared pipeline with the `oclitellmac` TypeScript plugin
 
 ## Installation
 
@@ -52,7 +52,12 @@ python -m src.generate \
 | `--output` | Output file path | stdout |
 | `--provider-name` | Display name in OpenCode UI | "LiteLLM" |
 | `--provider-key` | Provider key in config | "litellm" |
-| `--timeout` | Request timeout in seconds | 30 |
+| `--timeout` | Request timeout for `/public/model_hub` in seconds | 30 |
+| `--timeout-ms` | `options.timeout`: request timeout in milliseconds for the generated provider | - |
+| `--chunk-timeout-ms` | `options.chunkTimeout`: SSE chunk timeout in milliseconds | - |
+| `--header-timeout-ms` | `options.headerTimeout`: time to wait for response headers in milliseconds | - |
+| `--set-cache-key` | `options.setCacheKey`: ensure a cache key is always set for this provider | false |
+| `--env` | Env var name OpenCode checks for the API key (repeatable) | - |
 
 ### Category Filtering (Non-Chat Models)
 
@@ -75,23 +80,28 @@ By default, non-chat models (embedding, TTS, image generation, etc.) are added t
 
 ```jsonc
 {
-  "providers": {
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
     "litellm": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "LiteLLM",
       "options": {
-        "baseURL": "https://litellm.example.com/v1",
-        "apiKey": "",
-        "litellmProxy": true
+        "baseURL": "https://litellm.example.com/v1"
+        // optionally: "timeout", "chunkTimeout", "headerTimeout", "setCacheKey"
       },
+      "blacklist": [
+        // non-chat models, unless enabled via --enable-<category>
+      ],
       "models": {
         "gpt-4": {
           "id": "gpt-4",
           "name": "gpt-4",
-          "capabilities": {...},
+          "status": "active",
+          "tool_call": true,
           "cost": {...},
           "limit": {...},
-          "modalities": {...}
+          "modalities": {...},
+          "variants": {...}
         }
       }
     }
@@ -99,12 +109,17 @@ By default, non-chat models (embedding, TTS, image generation, etc.) are added t
 }
 ```
 
+Note: the generated config does not set `apiKey` — add it manually or via
+`{env:VAR}` / `{file:path}` substitution (see "Manual Configuration" below).
+`apiKey` is omitted intentionally so the generated file can be committed to
+version control without leaking secrets.
+
 ## Manual Configuration
 
 After generating the config:
 
-1. Add the output to your `opencode.jsonc` (merge into `providers` section)
-2. Fill in the `apiKey` value or set it via environment variable
+1. Merge the output into your `opencode.jsonc` (`provider` section)
+2. Add `options.apiKey` (e.g. `{env:LITELLM_API_KEY}` or `{file:~/.secrets/litellm-key}`)
 3. Run `opencode connect` to complete setup
 
 ## Requirements

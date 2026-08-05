@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any
 
 import httpx
+
+# Matches LiteLLM flags like "supports_low_reasoning_effort" -> "low".
+_REASONING_EFFORT_FLAG = re.compile(r"^supports_([a-z]+)_reasoning_effort$")
+
+
+def _extract_reasoning_efforts(*sources: dict[str, Any] | None) -> list[str]:
+    """Derive the set of reasoning-effort levels a model supports by
+    scanning `supports_<level>_reasoning_effort` boolean flags across
+    `model_info` and `litellm_params`. LiteLLM does not report this as a
+    single list field — each level is its own boolean flag.
+    """
+    efforts: set[str] = set()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key, value in source.items():
+            match = _REASONING_EFFORT_FLAG.match(key)
+            if match and value is True:
+                efforts.add(match.group(1))
+    return sorted(efforts)
 
 
 def fetch_model_hub(base_url: str, timeout: float = 30.0) -> list[dict[str, Any]]:
@@ -48,8 +69,13 @@ def fetch_model_info(
         result: dict[str, dict[str, Any]] = {}
         for item in data.get("data", []):
             key = item.get("key") or item.get("model_name") or ""
-            if key:
-                result[key] = item.get("model_info", {})
+            if not key:
+                continue
+            info = dict(item.get("model_info", {}))
+            efforts = _extract_reasoning_efforts(info, item.get("litellm_params"))
+            if efforts:
+                info["supports_reasoning_efforts"] = efforts
+            result[key] = info
         return result
     except httpx.HTTPError as e:
         print(f"Warning: Failed to fetch /v1/model/info: {e}", file=sys.stderr)

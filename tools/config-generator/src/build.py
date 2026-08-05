@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .map import map_cost, map_flags, map_limit, map_modalities
+from .map import map_cost, map_flags, map_limit, map_modalities, map_variants
 
 
 def build_model_entry(
@@ -22,6 +22,12 @@ def build_model_entry(
         "id": model_id,
         "name": model_id,
     }
+
+    # All models discovered from a live LiteLLM proxy are known-good/active;
+    # valid since opencode widened ModelConfig.status to include "active"
+    # (see docs/litellm-integration/field-coverage-comparison.md §2a).
+    if category == "chat":
+        model["status"] = "active"
 
     # Flat capability flags (all optional; omit when False to keep config clean).
     flags = map_flags(hub, info)
@@ -41,5 +47,10 @@ def build_model_entry(
     limit = map_limit(hub, info)
     if limit is not None:
         model["limit"] = limit
+
+    # Reasoning-effort variants (omit entirely if LiteLLM reports none).
+    variants = map_variants(info)
+    if variants is not None:
+        model["variants"] = variants
 
     return model

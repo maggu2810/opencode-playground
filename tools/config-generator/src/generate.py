@@ -9,7 +9,9 @@ Two endpoints are used:
                             context cost fields that the public hub lacks.
 
 The generated config follows the OpenCode ConfigProvider / ModelConfig schema
-as defined in packages/opencode/src/config/provider.ts (dev branch).
+as defined in packages/core/src/v1/config/provider.ts. See
+docs/litellm-integration/source-map.md for the exact commit this was
+verified against.
 
 Usage
 -----
@@ -19,7 +21,9 @@ Usage
         [--enable-embedding] [--enable-audio-speech] \\
         [--enable-transcription] [--enable-image-generation] \\
         [--enable-video-generation] [--enable-ocr] [--enable-ranking] \\
-        [--enable-all]
+        [--enable-all] \\
+        [--timeout-ms MS] [--chunk-timeout-ms MS] [--header-timeout-ms MS] \\
+        [--set-cache-key] [--env VAR ...]
 """
 
 from __future__ import annotations
@@ -41,6 +45,8 @@ def generate(
     provider_key: str,
     enabled_categories: set[str],
     timeout: float,
+    provider_options: dict[str, Any] | None = None,
+    env: list[str] | None = None,
 ) -> str:
     """Fetch data, build model entries, and render JSONC."""
     print("Fetching /public/model_hub …", file=sys.stderr)
@@ -95,6 +101,8 @@ def generate(
         enabled_categories=enabled_categories,
         provider_name=provider_name,
         provider_key=provider_key,
+        provider_options=provider_options,
+        env=env,
     )
 
 
@@ -141,6 +149,42 @@ def main() -> None:
         default=30.0,
         metavar="SECONDS",
         help="Request timeout for /public/model_hub in seconds (default: 30)",
+    )
+
+    # Provider-level options forwarded into the generated provider.options
+    # block. See docs/litellm-integration/field-coverage-comparison.md §1.
+    opt_group = parser.add_argument_group(
+        "generated provider options",
+        "Optional fields written into the generated provider's options block.",
+    )
+    opt_group.add_argument(
+        "--timeout-ms",
+        type=int,
+        metavar="MS",
+        help="options.timeout: request timeout in milliseconds for the generated provider",
+    )
+    opt_group.add_argument(
+        "--chunk-timeout-ms",
+        type=int,
+        metavar="MS",
+        help="options.chunkTimeout: SSE chunk timeout in milliseconds",
+    )
+    opt_group.add_argument(
+        "--header-timeout-ms",
+        type=int,
+        metavar="MS",
+        help="options.headerTimeout: time to wait for response headers in milliseconds",
+    )
+    opt_group.add_argument(
+        "--set-cache-key",
+        action="store_true",
+        help="options.setCacheKey: ensure a cache key is always set for this provider",
+    )
+    opt_group.add_argument(
+        "--env",
+        action="append",
+        metavar="VAR",
+        help="Env var name OpenCode checks for the API key (repeatable)",
     )
 
     # Per-category enable flags.
@@ -197,6 +241,16 @@ def main() -> None:
         if args.enable_ocr:              enabled_categories.add("ocr")
         if args.enable_ranking:          enabled_categories.add("ranking")
 
+    provider_options: dict[str, Any] = {}
+    if args.timeout_ms is not None:
+        provider_options["timeout"] = args.timeout_ms
+    if args.chunk_timeout_ms is not None:
+        provider_options["chunkTimeout"] = args.chunk_timeout_ms
+    if args.header_timeout_ms is not None:
+        provider_options["headerTimeout"] = args.header_timeout_ms
+    if args.set_cache_key:
+        provider_options["setCacheKey"] = True
+
     output = generate(
         base_url=args.base_url,
         bearer=args.bearer,
@@ -204,6 +258,8 @@ def main() -> None:
         provider_key=args.provider_key,
         enabled_categories=enabled_categories,
         timeout=args.timeout,
+        provider_options=provider_options or None,
+        env=args.env,
     )
 
     if args.output:

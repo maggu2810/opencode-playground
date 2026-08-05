@@ -4,6 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
+# LiteLLM reports input_cost_per_token / output_cost_per_token (and the
+# cache / extended-context variants) in USD per single token. OpenCode's
+# cost.input / cost.output ModelConfig fields are USD per **million**
+# tokens — packages/opencode/src/session/session.ts divides token counts by
+# this same constant before multiplying by the cost fields. Without this
+# conversion, every displayed/tracked cost would be 1,000,000x too low.
+#
+# See docs/litellm-integration/field-coverage-comparison.md §2a
+# ("Cost unit conversion") for the full rationale.
+USD_PER_TOKEN_TO_PER_MILLION = 1_000_000
+
 
 def _get_first(*sources: tuple[dict[str, Any], str]) -> Any:
     """Return the first non-None value from (dict, key) pairs."""
@@ -95,8 +106,8 @@ def map_cost(hub: dict[str, Any], info: dict[str, Any]) -> dict[str, Any] | None
         return None
 
     cost: dict[str, Any] = {
-        "input": input_cost,
-        "output": output_cost,
+        "input": input_cost * USD_PER_TOKEN_TO_PER_MILLION,
+        "output": output_cost * USD_PER_TOKEN_TO_PER_MILLION,
     }
 
     # Optional cache costs — only available from /v1/model/info.
@@ -109,9 +120,9 @@ def map_cost(hub: dict[str, Any], info: dict[str, Any]) -> dict[str, Any] | None
         (hub, "cache_creation_input_token_cost"),
     )
     if cache_read is not None:
-        cost["cache_read"] = cache_read
+        cost["cache_read"] = cache_read * USD_PER_TOKEN_TO_PER_MILLION
     if cache_write is not None:
-        cost["cache_write"] = cache_write
+        cost["cache_write"] = cache_write * USD_PER_TOKEN_TO_PER_MILLION
 
     # Extended context cost tier.
     # LiteLLM uses "above_128k" in /v1/model/info and "above_200k" in
@@ -128,11 +139,26 @@ def map_cost(hub: dict[str, Any], info: dict[str, Any]) -> dict[str, Any] | None
     )
     if input_over is not None and output_over is not None:
         cost["context_over_200k"] = {
-            "input": input_over,
-            "output": output_over,
+            "input": input_over * USD_PER_TOKEN_TO_PER_MILLION,
+            "output": output_over * USD_PER_TOKEN_TO_PER_MILLION,
         }
 
     return cost
+
+
+def map_variants(info: dict[str, Any]) -> dict[str, dict[str, str]] | None:
+    """Build the OpenCode `variants` map from LiteLLM's reasoning-effort
+    support flags (see `fetch.py` for how `supports_reasoning_efforts` is
+    derived from `/v1/model/info`'s `supports_<level>_reasoning_effort`
+    boolean fields).
+
+    Returns None (rather than an empty dict) when no levels are reported, so
+    callers can omit the `variants` key entirely.
+    """
+    efforts: list[str] | None = info.get("supports_reasoning_efforts")
+    if not efforts:
+        return None
+    return {effort: {"reasoningEffort": effort} for effort in efforts}
 
 
 def map_limit(hub: dict[str, Any], info: dict[str, Any]) -> dict[str, Any] | None:

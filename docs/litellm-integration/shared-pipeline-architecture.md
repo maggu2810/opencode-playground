@@ -158,6 +158,7 @@ def map_flags(hub: dict, info: dict) -> dict[str, bool]
 def map_modalities(hub: dict, info: dict) -> dict[str, list[str]]
 def map_cost(hub: dict, info: dict) -> dict[str, Any] | None
 def map_limit(hub: dict, info: dict) -> dict[str, Any] | None
+def map_variants(info: dict) -> dict[str, dict[str, str]] | None
 ```
 
 ### TypeScript (`src/map.ts`)
@@ -166,6 +167,7 @@ function mapFlags(hub: AnyRecord, info: AnyRecord): Record<string, boolean>
 function mapModalities(hub: AnyRecord, info: AnyRecord): { input: string[]; output: string[] }
 function mapCost(hub: AnyRecord, info: AnyRecord): AnyRecord | null
 function mapLimit(hub: AnyRecord, info: AnyRecord): AnyRecord | null
+function mapVariants(info: AnyRecord): Record<string, { reasoningEffort: string }> | undefined
 ```
 
 ### Field Mappings
@@ -189,16 +191,38 @@ function mapLimit(hub: AnyRecord, info: AnyRecord): AnyRecord | null
 | `modalities.output: ["audio"]` | `supports_audio_output` | Info only |
 
 #### Cost Structure
+
+LiteLLM reports per-token costs (USD per single token); OpenCode's `cost.*`
+fields are USD per **million** tokens. Both implementations multiply every
+LiteLLM cost value by `1_000_000` (`USD_PER_TOKEN_TO_PER_MILLION`) before
+writing it — see
+[field-coverage-comparison.md §2a](field-coverage-comparison.md) for the
+full rationale.
+
 ```typescript
 {
-  input: number,                    // Required (input_cost_per_token)
-  output: number,                   // Required (output_cost_per_token)
-  cache_read?: number,              // Optional (cache_read_input_token_cost)
-  cache_write?: number,             // Optional (cache_creation_input_token_cost)
-  context_over_200k?: {             // Optional (above_128k / above_200k fields)
+  input: number,                    // Required (input_cost_per_token * 1_000_000)
+  output: number,                   // Required (output_cost_per_token * 1_000_000)
+  cache_read?: number,              // Optional (cache_read_input_token_cost * 1_000_000)
+  cache_write?: number,             // Optional (cache_creation_input_token_cost * 1_000_000)
+  context_over_200k?: {             // Optional (above_128k / above_200k fields, * 1_000_000)
     input: number,
     output: number
   }
+}
+```
+
+#### Variants (Reasoning Effort)
+
+Derived from `/v1/model/info`'s `supports_<level>_reasoning_effort` boolean
+flags (there is no single list field for this in LiteLLM's API):
+
+```typescript
+{
+  low?: { reasoningEffort: "low" },
+  medium?: { reasoningEffort: "medium" },
+  high?: { reasoningEffort: "high" },
+  // ... any level LiteLLM reports as supported
 }
 ```
 
@@ -233,6 +257,7 @@ function buildModelEntry(hub: AnyRecord, info: AnyRecord, category: Category): A
 {
   id: string,                          // model_group
   name: string,                        // model_group (display name)
+  status?: "active",                   // Only for the "chat" category
   tool_call?: true,                    // Only if true
   attachment?: true,                   // Only if true
   reasoning?: true,                    // Only if true
@@ -242,7 +267,8 @@ function buildModelEntry(hub: AnyRecord, info: AnyRecord, category: Category): A
     output: string[]
   },
   cost?: { ... },                      // Only if input/output available
-  limit?: { ... }                      // Only if context/output available
+  limit?: { ... },                     // Only if context/output available
+  variants?: { ... }                   // Only if LiteLLM reports reasoning-effort levels
 }
 ```
 
@@ -311,7 +337,9 @@ def render_jsonc(
   categories: dict[str, str],
   enabled_categories: set[str],
   provider_name: str,
-  provider_key: str
+  provider_key: str,
+  provider_options: dict | None = None,
+  env: list[str] | None = None,
 ) -> str
 ```
 
@@ -324,8 +352,9 @@ def render_jsonc(
       "npm": "@ai-sdk/openai-compatible",
       "name": "LiteLLM",
       "options": {
-        "baseURL": "https://litellm.example.com/v1",
-        "litellmProxy": true
+        "baseURL": "https://litellm.example.com/v1"
+        // optionally: "timeout", "chunkTimeout", "headerTimeout", "setCacheKey"
+        // via --timeout-ms / --chunk-timeout-ms / --header-timeout-ms / --set-cache-key
       },
       "blacklist": [
         // embedding model — not used by opencode
@@ -360,7 +389,7 @@ opcodeConfig.provider[providerKey] = {
   npm: "@ai-sdk/openai-compatible",
   name: providerName,
   key: apiKey,
-  options: { baseURL, apiKey, litellmProxy: true },
+  options: { baseURL, apiKey, ...providerOptions }, // timeout, chunkTimeout, headerTimeout, setCacheKey
   blacklist: blacklist.map(([id]) => id),
   models
 }
@@ -485,5 +514,4 @@ To add a new field mapping:
 
 ---
 
-*Last updated: May 2026*  
-*Verified against: Python `src/*.py` and TypeScript `src/*.ts` (modular architecture)*
+*Verified against: Python `src/*.py` and TypeScript `src/*.ts` (modular architecture). Reference commit for the OpenCode schema is tracked in [source-map.md](source-map.md).*

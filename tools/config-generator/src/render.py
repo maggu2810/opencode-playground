@@ -41,6 +41,8 @@ def render_jsonc(
     enabled_categories: set[str],
     provider_name: str,
     provider_key: str,
+    provider_options: dict[str, Any] | None = None,
+    env: list[str] | None = None,
 ) -> str:
     """Render the full opencode.jsonc string for a single provider.
 
@@ -73,9 +75,15 @@ def render_jsonc(
     lines.append(f'    "{provider_key}": {{')
     lines.append('      "npm": "@ai-sdk/openai-compatible",')
     lines.append(f'      "name": "{provider_name}",')
+    if env:
+        lines.append(f'      "env": {_dumps_value(env)},')
     lines.append('      "options": {')
-    lines.append(f'        "baseURL": "{base_url.rstrip("/")}/v1",')
-    lines.append('        "litellmProxy": true')
+    options: dict[str, Any] = {"baseURL": f"{base_url.rstrip('/')}/v1"}
+    options.update(provider_options or {})
+    option_items = list(options.items())
+    for idx, (key, value) in enumerate(option_items):
+        trailer = "" if idx == len(option_items) - 1 else ","
+        lines.append(f"        {_dumps_value(key)}: {_dumps_value(value)}{trailer}")
     lines.append("      },")
 
     # Blacklist block — omitted when every non-chat category is enabled.

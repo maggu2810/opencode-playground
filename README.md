@@ -10,6 +10,9 @@
   the shared pipeline architecture used by the Python tool and TypeScript plugin
 - [LiteLLM Integration Implementation Guide](docs/litellm-integration/implementation-guide.md) —
   implementation guide for config-generator and oclitellmac
+- [LiteLLM Integration Source Map](docs/litellm-integration/source-map.md) —
+  single source of truth for the exact commit/tag of every third-party repo
+  referenced by the LiteLLM integration docs
 
 ## opencode on Termux on Android
 

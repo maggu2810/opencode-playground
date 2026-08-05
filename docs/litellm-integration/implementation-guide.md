@@ -17,7 +17,7 @@ tools/config-generator/src/
 ├── filter.py          # Blacklist generation (38 lines)
 └── render.py          # JSONC output (117 lines)
 
-plugins/oclitellmac-server/src/
+plugins/oclitellmac/server/src/
 ├── index.ts           # Plugin entry (186 lines)
 ├── config.ts          # Zod schemas (60 lines)
 ├── fetch.ts           # HTTP client (140 lines)
@@ -37,7 +37,7 @@ cd tools/config-generator
 python -c "from src.generate import main; print('OK')"
 
 # TypeScript (type checking)
-cd plugins/oclitellmac-server
+cd plugins/oclitellmac/server
 npx tsc --noEmit --skipLibCheck
 ```
 
@@ -140,8 +140,8 @@ if args.enable_new_category: enabled_categories.add("new_category")
 
 **Step 4**: Update documentation (ALL)
 - `docs/litellm-integration/field-coverage-comparison.md` §4 (category table)
-- `plugins/oclitellmac-server/README.md` (category filtering section)
-- `plugins/oclitellmac-server/config-example.json` (category reference)
+- `plugins/oclitellmac/server/README.md` (category filtering section)
+- `plugins/oclitellmac/server/config-example.json` (category reference)
 - `tools/config-generator/README.md` (category filtering table)
 
 ### Adding a New Field Mapping
@@ -241,7 +241,7 @@ cat ~/.local/state/oclitellmac/providers/YOUR_PROVIDER_KEY.json | jq '.models'
    ```bash
    # Search OpenCode source for batch-related fields
    cd repos/opencode
-   git grep -i "batch" packages/opencode/src/config/provider.ts
+   git grep -i "batch" packages/core/src/v1/config/provider.ts
    ```
 
 2. **If field exists in OpenCode schema**:
@@ -464,18 +464,26 @@ jq '.models.gpt-4' ~/.local/state/oclitellmac/providers/PROVIDER_KEY.json
 
 ### When OpenCode updates its schema
 
-1. **Check `repos/opencode/packages/opencode/src/config/provider.ts`**:
+1. **Check the currently pinned commit** in
+   [source-map.md](source-map.md) — this is the single place recording which
+   `repos/opencode` commit/tag was last verified. Do not record a new
+   commit/tag anywhere else.
+
+2. **Update the submodule and diff the schema**:
    ```bash
    cd repos/opencode
-   git pull origin dev
-   git diff HEAD~1 packages/opencode/src/config/provider.ts
+   git fetch origin
+   git checkout <new-tag>
+   git diff <old-commit> <new-tag> -- packages/core/src/v1/config/provider.ts
    ```
 
-2. **Update field mappings** if new fields added
+3. **Update field mappings** if new fields added (see "Module Consistency Rules" above)
 
-3. **Update `docs/litellm-integration/field-coverage-comparison.md`** with new schema version
+4. **Update `docs/litellm-integration/field-coverage-comparison.md`** with the new field/schema state
 
-4. **Test both implementations** with new OpenCode version
+5. **Update `docs/litellm-integration/source-map.md`** with the new commit/tag/date and a summary of what changed since the previous pin
+
+6. **Test both implementations** with the new OpenCode version
 
 ### When LiteLLM updates its API
 
@@ -487,7 +495,13 @@ jq '.models.gpt-4' ~/.local/state/oclitellmac/providers/PROVIDER_KEY.json
 
 4. **Update documentation** with new API behavior
 
+### When a reference LiteLLM plugin (BlakeHastings / yuseferi) updates
+
+1. **Bump the submodule** to the new commit/tag
+2. **Update `docs/litellm-integration/source-map.md`** with the new commit/tag/date and a summary of relevant changes
+3. **Re-check `field-coverage-comparison.md`** for any field-coverage gaps the update closes or opens
+4. **Port any relevant fixes/features** into `config-generator` and `oclitellmac` (see "Module Consistency Rules" above)
+
 ---
 
-*Last updated: May 2026*  
-*For questions: Check `docs/litellm-integration/field-coverage-comparison.md` (field reference) and `shared-pipeline-architecture.md` (design overview)*
+*For questions: Check [source-map.md](source-map.md) (reference commits), `docs/litellm-integration/field-coverage-comparison.md` (field reference), and `shared-pipeline-architecture.md` (design overview)*
