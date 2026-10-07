@@ -10,10 +10,10 @@ Its instructions are binding — follow them as if they were written in this fil
 
 ## Critical Constants
 
-- opencode repo: `repos/opencode/` (git submodule, branch: dev)
+- opencode repo: `repos/opencode/` (git submodule, v2.0.24; source of truth for V2 behavior)
 - plugins dir: `plugins/`
-- Plugin entry: `plugins/{name}/src/index.ts` or `plugins/{name}/src/index.tsx` (for TUI)
-- Installation: `opencode plugin <path>` (CLI command)
+- Plugin module: default export `{ id, setup(ctx) }` (V2); entry files/resolution and installation: when working with plugin registration, [read here](plugins/oclitellmac/docs/opencode-plugin-cli.md)
+- `plugins/tui-playground-v1` is an intentionally V1 example; do not edit its code
 
 ## Skill Source of Truth
 
@@ -30,7 +30,7 @@ changes made there are lost and do not propagate back to this repo.
 LiteLLM integration plugin (Git submodule).
 - **Location**: `plugins/oclitellmac/` (submodule → github:maggu2810/oclitellmac)
 - **Purpose**: Auto-discovery and configuration of LiteLLM models with budget tracking
-- **Installation**: `opencode plugin github:maggu2810/oclitellmac`
+- **Installation**: when installing it, [read here](plugins/oclitellmac/docs/opencode-plugin-cli.md)
 - **Docs**: See `plugins/oclitellmac/AGENTS.md`
 
 ## Tools

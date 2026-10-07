@@ -9,7 +9,7 @@ Four implementations are compared:
 | **BlakeHastings** | `repos/opencode-litellm@BlakeHastings/src/index.ts` — v1 plugin API, `config` + `auth` + `chat.params` hooks |
 | **yuseferi** | `repos/opencode-litellm@yuseferi/src/plugin/` — v2 plugin API, `provider.models` hook |
 | **playground-gen** | `tools/config-generator/src/generate.py` — generates static `opencode.jsonc` for one configurable provider |
-| **oclitellmac-server** | `plugins/oclitellmac/server/src/` — multi-endpoint auto-config plugin, `config` hook + budget tracking |
+| **oclitellmac-server** | `plugins/oclitellmac/server/src/` — multi-endpoint auto-config plugin (V2 plugin API, `ctx.provider.transform`) + budget tracking |
 
 ---
 
@@ -19,7 +19,7 @@ Source of truth: `packages/core/src/v1/config/provider.ts` (`Info` schema).
 
 | Field | OpenCode uses it for | BlakeHastings | yuseferi | playground-gen | oclitellmac-server |
 |---|---|---|---|---|---|
-| `npm` | Selects the AI SDK adapter package | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` (chat) / `"@ai-sdk/openai"` (responses) | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` |
+| `npm` | Selects the AI SDK adapter package | `"@ai-sdk/openai-compatible"` | `"@ai-sdk/openai-compatible"` (chat) / `"@ai-sdk/openai"` (responses) | `"@ai-sdk/openai-compatible"` | `package`: `"@opencode/ai/providers/openai-compatible"` (Claude models: `@opencode/ai/providers/anthropic` per model) — registered as a V2 definition, not an `npm` config field |
 | `name` | Display name in UI | `"LiteLLM"` | not set¹ | configurable via `--provider-name` | from `server.json` `providerName` field |
 | `options.baseURL` | API endpoint for all requests | `${rootURL}/v1` | read from provider config or env | `${base_url}/v1` | from `server.json` `baseUrl` field + `/v1` |
 | `options.apiKey` | Bearer token sent with every request | injected at runtime from auth store | read from provider config or `LITELLM_API_KEY` env | **omitted** — user sets it | from `server.json` `apiKey` field |
@@ -35,7 +35,7 @@ Source of truth: `packages/core/src/v1/config/provider.ts` (`Info` schema).
 | `id` | Provider identifier override | **not set** | **not set** | **not set** | **not set** |
 | `env` | Env var names OpenCode checks for the API key | **not set** | **not set** | **not set** | set via `providerOptions.env` |
 | `whitelist` | Restrict visible models to a named subset | **not set** | **not set** | **not set** | **not set** |
-| `blacklist` | Hide specific models from the model picker | **not set** | **not set** | set — non-chat model IDs by default; see §4 | set — non-chat models filtered via `buildBlacklist()`; see §4 |
+| `blacklist` | Hide specific models from the model picker | **not set** | **not set** | set — non-chat model IDs by default; see §4 | non-chat models selected via `buildBlacklist()` and registered with `enabled: false`; see §4 |
 | `models` | Per-model config overrides | set (see §2) | set dynamically via `provider.models` hook | set statically in JSONC | fetched from `/public/model_hub` + `/v1/model/info` |
 
 ¹ yuseferi's `LiteLLMPlugin` and `LiteLLMResponsesPlugin` use the `provider.models` hook — the provider shell (`npm`, `name`, `options.*`) must be declared by the user in their own `opencode.json`. The plugin only populates the `models` map.
@@ -246,6 +246,13 @@ differently:
 
 ### How the playground-gen blacklist works
 
+> **V2 caveat:** OpenCode v2 normalizes the legacy `provider` config shape but omits the
+> legacy provider keys `id`, `whitelist` and `blacklist` and the model keys `release_date`,
+> `attachment`, `reasoning`, `temperature` with an "omitted unsupported legacy setting"
+> diagnostic (`packages/core/src/config/normalize.ts`, `unsupportedProvider` / `unsupportedModel`).
+> The description below (and the `blacklist`-based hiding in the generated file) therefore
+> reflects v1 behavior; its effect on v2 has not been re-verified here.
+
 All models — chat and non-chat — are written as active entries in the `"models"`
 block with full cost, limit, and capability metadata. Non-chat models whose
 category is not opted-in are additionally listed in the provider-level
@@ -354,39 +361,19 @@ Exact locations in the OpenCode source where each field is read and what effect 
 
 **Location**: `plugins/oclitellmac/server/`
 
-**Approach**: Multi-endpoint auto-configuration via `config` hook. Reads configuration from `~/.config/oclitellmac/server.json`, fetches models from multiple LiteLLM proxies, and injects all providers dynamically at runtime.
-
-### Key Features
-
-1. **Multiple endpoints**: Single plugin handles N LiteLLM proxies, each becoming a separate OpenCode provider
-2. **Config-driven**: All settings (baseUrl, apiKey, providerName, providerKey) in external `server.json`
-3. **Auto-discovery**: Fetches models from `/public/model_hub` + `/v1/model/info` on startup
-4. **Smart caching**: Caches provider data to `~/.local/state/oclitellmac/providers/`, falls back on network failure
-5. **Budget tracking**: Polls `/key/info` every 60s + after each message, stores to `~/.local/state/oclitellmac/key-info/`
-6. **Direct auth injection**: Embeds `apiKey` directly in both `key` and `options.apiKey` (no OpenCode auth store needed)
-7. **Non-chat filtering**: Injects a provider-level blacklist for non-chat models (see §4)
-8. **BlakeHastings pattern**: Uses `config` hook to directly mutate `config.provider` object
-
-### Implementation Details
-
-- **Provider injection**: Via `config` hook in `src/index.ts`
-- **Model building**: Modular pipeline using `transform.ts`, `build.ts`, `map.ts`, `categorize.ts`, `filter.ts`
-- **Blacklist injection**: Non-chat models filtered via `buildBlacklist()` from `filter.ts` (see §4)
-- **TUI compatibility**: Injects `key` field alongside `options.apiKey`
-- **Budget tracking**: `src/budget.ts` with periodic polling + `chat.message` hook trigger
-- **State management**: `src/state.ts` with file locking to prevent write collisions
-- **Field mapping**: Same as `playground-gen` (hub + info → model config)
+**Approach**: Multi-endpoint auto-configuration. Reads `~/.config/oclitellmac/server.json`, fetches models from multiple LiteLLM proxies and registers each endpoint as a provider through the V2 plugin API at setup time. For the mechanism (setup flow, registered definitions, routes, budget tracking, caching), when working on the plugin, [read here](../../plugins/oclitellmac/server/ARCHITECTURE.md).
 
 ### Differences from Other Implementations
 
 | Aspect | oclitellmac-server |
 |---|---|
+| **Plugin API** | V2 (`ctx.provider.transform`), unlike BlakeHastings (v1 `config` hook) |
 | **Configuration** | External `server.json` (not `opencode.json`) |
 | **Providers** | Multiple providers per plugin (vs. one) |
-| **Auth storage** | Direct injection via `options.apiKey` (not auth.json) |
+| **Auth storage** | Direct injection via provider settings (not auth.json) |
 | **Model discovery** | Same endpoints as playground-gen (`/public/model_hub` + `/v1/model/info`) |
 | **Caching** | File-based with fallback (playground-gen has none) |
-| **Budget tracking** | Continuous polling + event-based (unique feature) |
+| **Budget tracking** | Continuous polling + refresh on each prompt (unique feature) |
 | **Restart required** | Yes (for config changes) |
 
 ### Companion: oclitellmac-tui

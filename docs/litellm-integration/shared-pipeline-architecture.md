@@ -368,7 +368,7 @@ def render_jsonc(
 }
 ```
 
-### TypeScript (`src/transform.ts`) - Runtime Config Injection
+### TypeScript (`src/transform.ts`) - Runtime Registration
 
 ```typescript
 function transformModels(
@@ -380,20 +380,7 @@ function transformModels(
 }
 ```
 
-**Then in `index.ts`**:
-```typescript
-const { models, categories } = transformModels(hubEntries, infoMap)
-const blacklist = buildBlacklist(categories, enabledCategories)
-
-opcodeConfig.provider[providerKey] = {
-  npm: "@ai-sdk/openai-compatible",
-  name: providerName,
-  key: apiKey,
-  options: { baseURL, apiKey, ...providerOptions }, // timeout, chunkTimeout, headerTimeout, setCacheKey
-  blacklist: blacklist.map(([id]) => id),
-  models
-}
-```
+`index.ts` then converts the result to V2 provider/model definitions (`toV2.ts`) and registers them once with `ctx.provider.transform`. Non-chat models selected by `buildBlacklist()` are registered with `enabled: false`. For the registered shape, when working on the plugin, [read here](../../plugins/oclitellmac/server/ARCHITECTURE.md).
 
 ---
 

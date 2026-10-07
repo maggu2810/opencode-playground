@@ -137,7 +137,7 @@ npm:opencode-forge -> alias | name: undefined | fetchSpec: null
 file:///absolute/path -> directory | name: undefined | fetchSpec: /absolute/path
 ```
 
-**Critical insight:** Git specs (`github:user/repo`, `user/repo`) have **`name: undefined`**. This causes fallback behavior in opencode's `Npm.add()`.
+**Critical insight:** Git specs (`github:user/repo`, `user/repo`) have **`name: undefined`**. OpenCode's `Npm.add()` then falls back to the arborist tree / staged `package.json` to learn the installed name (see 9.2).
 
 **Node.js equivalent:**
 ```bash
@@ -274,7 +274,7 @@ const arborist = new Arborist({
 - `lib/fetcher.js:105-121` — `npmCliConfig` construction (no `--ignore-scripts` added)
 - `lib/dir.js:35-36` — `DirFetcher.#prepareDir` checks `ignoreScripts` (but runs after subprocess)
 
-**OpenCode behavior:** OpenCode **always** uses `ignoreScripts: true` (`repos/opencode/packages/core/src/npm.ts:90`), but for `github:` specs:
+**OpenCode behavior:** OpenCode **always** uses `ignoreScripts: true` (`repos/opencode/packages/util/src/npm.ts`, `reify()`), but for `github:` specs:
 
 - If the package has `prepare`, `build`, or other scripts → npm subprocess runs → `prepare` executes
 - The `dist/` directory is generated during install **only if** the subprocess succeeds and the `prepare` script builds it
@@ -664,37 +664,10 @@ npm config delete ignore-scripts
 
 ### 6.3 How OpenCode Uses Config
 
-OpenCode loads npm config via `@npmcli/config` and passes it to arborist:
-
-```typescript
-// repos/opencode/packages/core/src/npm-config.ts
-import Config from "@npmcli/config"
-
-export const load = (dir: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const config = new Config({
-        cwd: dir,
-        // ... other options
-      })
-      await config.load()
-      return config.flat as Record<string, unknown>
-    },
-    // ...
-  })
-```
-
-Then in arborist setup:
-
-```typescript
-// repos/opencode/packages/core/src/npm.ts:78-91
-const npmOptions = yield* NpmConfig.load(input.dir)
-const arborist = new Arborist({
-  ...npmOptions,  // ← Includes registry, auth tokens, etc.
-  path: input.dir,
-  ignoreScripts: true,  // ← But always overrides to true
-})
-```
+OpenCode loads npm config via `@npmcli/config` (`repos/opencode/packages/util/src/npm-config.ts`,
+`NpmConfig.load(dir)` returns `config.flat`) and spreads it into the arborist options in
+`Npm.reify()` (`packages/util/src/npm.ts`), then sets `path`, `ignoreScripts: true`, `audit: false`
+and `savePrefix: ""` on top.
 
 **Result:** OpenCode respects user's registry, auth tokens, and proxy settings from `.npmrc`, but always suppresses scripts.
 
@@ -769,7 +742,7 @@ try {
 ```bash
 # From plugin's dist/ directory (where import() happens):
 bun -e "
-const tuiDir = '/home/user/.cache/opencode/packages/github:user/plugin/node_modules/@user/plugin/dist';
+const tuiDir = '/home/user/.cache/opencode/npm/git-plugin-0123456789ab/<generation>/node_modules/@user/plugin/dist';
 try {
   const r = import.meta.resolve('@opentui/solid', tuiDir);
   console.log('resolved:', r);
@@ -784,41 +757,11 @@ try {
 
 **Why opencode's built-in TUI works:**
 
-OpenCode calls `ensureRuntimePluginSupport()` which registers Bun runtime plugins (via `import { plugin } from "bun"`) that provide virtual in-memory modules for:
-- `@opentui/core`
-- `@opentui/solid` *(verified: `@opentui/solid@0.2.6` `scripts/runtime-plugin-support-configure.ts:34-37` `defaultRuntimeModules`)*
-- `solid-js` and `solid-js/store` *(same source)*
-- `@opentui/keymap/*` (via `additional` parameter)
-
-These modules are never physically installed in plugin `node_modules/` — Bun's runtime plugin hooks intercept bare imports (e.g., `import "@opentui/solid"`) and redirect them to pre-loaded virtual modules using `build.module()` + `build.onResolve()` *(verified: `@opentui/core@0.2.6` `index-64dvh5m8.js:360-369`)*.
-
-**Known issue (unresolved):**
-Plugins installed via `github:` specs fail to load TUI with `"type":"ResolveMessage"` error `"Cannot find module '@opentui/solid'"` despite the runtime plugin being registered. The exact mechanism is not yet confirmed from source. Suspected factors: path containing `:` character (`github:maggu2810`), missing `bun.lock` in ancestor directories, or Bun-internal module context resolution differences between npm registry cache paths vs git cache paths.
+OpenCode calls `ensureRuntimePluginSupport()` (see 9.6.1), which registers Bun runtime plugins that provide virtual in-memory modules for `@opentui/*` and `solid-js`. `import.meta.resolve` does not use these runtime plugins.
 
 ### 7.4 import.meta.resolve in OpenCode
 
-```typescript
-// repos/opencode/packages/core/src/npm.ts:47-57
-const resolveEntryPoint = (name: string, dir: string): EntryPoint => {
-  let entrypoint: Option.Option<string>
-  try {
-    // Bun variant: resolve `name` from `dir`
-    const resolved = typeof Bun !== "undefined"
-      ? import.meta.resolve(name, dir)
-      : import.meta.resolve(dir)  // Node variant: resolve dir itself
-    entrypoint = Option.some(resolved)
-  } catch {
-    entrypoint = Option.none()
-  }
-  return { directory: dir, entrypoint }
-}
-```
-
-**Called with:**
-- `name`: package name (e.g., `"opencode-forge"`)
-- `dir`: path to `node_modules/opencode-forge`
-
-**Returns:** `file:///path/to/node_modules/opencode-forge/dist/index.js` (resolved entry point)
+The V1 `resolveEntryPoint()` helper described here no longer exists in `packages/util/src/npm.ts`. Entry resolution for plugins is done by the plugin host; this section is intentionally left without OpenCode specifics because they were not re-verified. For observable behavior, when registering plugins, [read the plugin CLI guide](../plugins/oclitellmac/docs/opencode-plugin-cli.md).
 
 ---
 
@@ -934,623 +877,96 @@ npm pack --dry-run
 
 ## 9. How OpenCode Uses All of This
 
-OpenCode uses arborist directly, not the npm CLI. Here's the complete flow.
+OpenCode v2 uses arborist directly, not the npm CLI. The implementation is
+`repos/opencode/packages/util/src/npm.ts` (`Npm` service: `add`, `resolve`, `check`,
+`update`, `which`). For the user-facing commands (`opencode plugin add/list/check/update/remove`),
+config files, and spec formats, when using or registering plugins, [read the plugin CLI guide](../plugins/oclitellmac/docs/opencode-plugin-cli.md).
 
 ### 9.1 Cache Path Derivation
 
-**XDG cache base:**
+The cache root is `<global.cache>/npm/<key>/` (`Npm` service `directory()`), where
+`global.cache` is the OpenCode cache directory (`~/.cache/opencode` on Linux, from `Global`
+in `packages/util/src/global.ts`). The `<key>` is derived from the spec by `npm-package-arg`:
 
-```typescript
-// repos/opencode/packages/core/src/global.ts:10-11
-import { xdgCache } from "xdg-basedir"
-const cache = path.join(xdgCache!, "opencode")
-// → ~/.cache/opencode/ (Linux)
-// → ~/Library/Caches/opencode/ (macOS)
-```
+| Spec type | `<key>` |
+|---|---|
+| Registry (`version`, `range`, `tag`) | `<name>@<spec>`, e.g. `opencode-forge@latest`, `opencode-forge@1.0.0` (`latest` when no spec given) |
+| Git (`github:`, `user/repo`, `git+https://...`) | `git-<slug>-<12 hex of sha256(spec)>` |
+| Other (directory, alias, ...) | Not installable: `add` is not meaningful, `check`/`update` fail |
 
-**Per-package cache directory:**
+On Windows, illegal characters (`<>:"|?*` and control characters) in the key are replaced
+with `_` (`sanitize()`).
 
-```typescript
-// repos/opencode/packages/core/src/npm.ts:77
-const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
-```
+Each install is published as a numbered generation directory (`<key>/<timestamp>/node_modules/<name>`).
+The two newest generations are kept; older ones are removed after 7 days (staging
+directories after 1 hour) during `update`.
 
-**Sanitization (Windows only):**
+### 9.2 Npm.add() — Install Flow
 
-```typescript
-// repos/opencode/packages/core/src/npm.ts:42-46
-export function sanitize(pkg: string) {
-  if (!illegal) return pkg  // Non-Windows: no-op
-  return Array.from(pkg, (char) =>
-    (illegal.has(char) || char.charCodeAt(0) < 32 ? "_" : char)
-  ).join("")
-}
-```
+1. Parse the spec with `npm-package-arg`; compute the cache directory.
+2. Take a file lock (`npm-install:<dir>`). If a generation already contains the package
+   and this is not an update, return it.
+3. Reify into a `.staging-*` directory with arborist: npm config from `@npmcli/config`
+   (see 6.3), `ignoreScripts: true`, `audit: false`, `save: true`, `saveType: "prod"`.
+4. Resolve the installed package name from the arborist tree (`edgesOut`), falling back to
+   the spec's name or the staged `package.json` dependencies. This matters for git specs,
+   where `npa` returns no `name`.
+5. Rename the staging directory to the next generation and return
+   `{ directory, name, version?, revision? }`. For git specs the revision is the commit
+   SHA read from `package-lock.json`.
 
-**Examples:**
+`resolve(pkg)` returns the newest installed generation without installing. `check(pkg)`
+compares the installed revision with the latest one via `pacote` (`manifest`/`resolve`)
+and returns whether an update is available (immutable specs, i.e. exact versions and
+commit SHAs, always return `false`). `update(pkg)` re-reifies with `preferOnline` and
+`noGitRevCache`. `which(pkg, bin)` returns a binary path from `node_modules/.bin`.
 
-| Package spec                        | Cache directory (Linux)                                              |
-|-------------------------------------|----------------------------------------------------------------------|
-| `opencode-forge`                    | `~/.cache/opencode/packages/opencode-forge/`                         |
-| `opencode-forge@1.0.0`              | `~/.cache/opencode/packages/opencode-forge@1.0.0/`                   |
-| `@maggu2810/opencode-forge`         | `~/.cache/opencode/packages/@maggu2810/opencode-forge/`              |
-| `github:maggu2810/opencode-forge`   | `~/.cache/opencode/packages/github:maggu2810/opencode-forge/`        |
-| `github:maggu2810/opencode-forge`   | `~/.cache/opencode/packages/github_maggu2810_opencode-forge/` (Windows) |
-
-### 9.2 Npm.add() — Plugin Install Flow
-
-**Entry point:** `repos/opencode/packages/core/src/npm.ts:113`
-
-```typescript
-const add = Effect.fn("Npm.add")(function* (pkg: string) {
-  // 1. Determine cache directory
-  const dir = directory(pkg)  // ~/.cache/opencode/packages/<sanitized-pkg>/
-  
-  // 2. Parse spec to get package name (falls back to full spec if undefined)
-  const name = (() => {
-    try {
-      return npa(pkg).name ?? pkg
-    } catch {
-      return pkg
-    }
-  })()
-  
-  // 3. Check if already cached
-  if (yield* afs.existsSafe(path.join(dir, "node_modules", name))) {
-    return resolveEntryPoint(name, path.join(dir, "node_modules", name))
-  }
-  
-  // 4. Install via arborist
-  const tree = yield* reify({ dir, add: [pkg] })
-  
-  // 5. Extract installed package metadata from edgesOut
-  const first = tree.edgesOut.values().next().value?.to
-  if (!first) {
-    // Fallback: try to resolve directly (in case arborist installed but didn't populate edgesOut)
-    const result = resolveEntryPoint(name, path.join(dir, "node_modules", name))
-    if (Option.isSome(result.entrypoint)) return result
-    return yield* new InstallFailedError({ add: [pkg], dir })
-  }
-  
-  // 6. Resolve entry point using actual package name and path from arborist
-  return resolveEntryPoint(first.name, first.path)
-}, Effect.scoped)
-```
-
-**arborist.reify() call:**
-
-```typescript
-// repos/opencode/packages/core/src/npm.ts:78-106
-const reify = (input: { dir: string; add?: string[] }) =>
-  Effect.gen(function* () {
-    yield* flock.acquire(`npm-install:${input.dir}`)  // Lock to prevent concurrent installs
-    const { Arborist } = yield* Effect.promise(() => import("@npmcli/arborist"))
-    const add = input.add ?? []
-    const npmOptions = yield* NpmConfig.load(input.dir)  // Load .npmrc config
-    const arborist = new Arborist({
-      ...npmOptions,        // Include user's registry, auth, etc.
-      path: input.dir,      // Where to install
-      binLinks: true,       // Create .bin symlinks
-      progress: false,      // No progress bars
-      savePrefix: "",       // Don't add ^ or ~ to package.json
-      ignoreScripts: true,  // ← ALWAYS suppresses lifecycle scripts
-    })
-    return yield* Effect.tryPromise({
-      try: () =>
-        arborist.reify({
-          ...npmOptions,
-          add,              // Packages to install
-          save: true,       // Update package.json
-          saveType: "prod", // Add as dependency (not devDependency)
-        }),
-      catch: (cause) => new InstallFailedError({ cause, add, dir: input.dir }),
-    }) as Effect.Effect<ArboristTree, InstallFailedError>
-  })
-```
-
-**Key behaviors:**
-
-1. **Cache reuse:** If `node_modules/<name>` already exists in the cache dir, skip install
-2. **Git spec name fallback:** For `github:user/repo`, `npa().name` is `undefined`, so `name` becomes `"github:user/repo"` — then `node_modules/github:user/repo` would never exist (invalid path), forcing install
-3. **edgesOut extraction:** After install, `first.name` is the **actual package name** from `package.json` (e.g., `"opencode-forge"`), not the spec
-4. **ignoreScripts: true:** `prepare` script never runs — git packages must have `dist/` committed
-
-### 9.3 Npm.install() — Project Dependency Sync
-
-**Purpose:** Install dependencies in a project directory (not a plugin).
-
-**Entry point:** `repos/opencode/packages/core/src/npm.ts:138`
-
-```typescript
-const install: Interface["install"] = Effect.fn("Npm.install")(function* (dir, input) {
-  // 1. Check if directory is writable
-  const canWrite = yield* afs.access(dir, { writable: true }).pipe(
-    Effect.as(true),
-    Effect.orElseSucceed(() => false),
-  )
-  if (!canWrite) return  // Skip if read-only
-  
-  // 2. Map input packages to spec strings
-  const add = input?.add.map((pkg) => [pkg.name, pkg.version].filter(Boolean).join("@")) ?? []
-  
-  // 3. If node_modules/ doesn't exist, install immediately
-  if (!(yield* afs.existsSafe(path.join(dir, "node_modules")))) {
-    yield* reify({ add, dir })
-    return
-  }
-  
-  // 4. Check if package.json and package-lock.json are in sync
-  const pkg = yield* afs.readJson(path.join(dir, "package.json")).pipe(Effect.orElseSucceed(() => ({})))
-  const lock = yield* afs.readJson(path.join(dir, "package-lock.json")).pipe(Effect.orElseSucceed(() => ({})))
-  
-  const declared = new Set([
-    ...Object.keys(pkg?.dependencies || {}),
-    ...Object.keys(pkg?.devDependencies || {}),
-    ...Object.keys(pkg?.peerDependencies || {}),
-    ...Object.keys(pkg?.optionalDependencies || {}),
-    ...(input?.add || []).map((p) => p.name),
-  ])
-  
-  const locked = new Set([
-    ...Object.keys(lock?.packages?.[""]?.dependencies || {}),
-    ...Object.keys(lock?.packages?.[""]?.devDependencies || {}),
-    ...Object.keys(lock?.packages?.[""]?.peerDependencies || {}),
-    ...Object.keys(lock?.packages?.[""]?.optionalDependencies || {}),
-  ])
-  
-  // 5. If any declared dep is missing from lock, reify
-  for (const name of declared) {
-    if (!locked.has(name)) {
-      yield* reify({ dir, add })
-      return
-    }
-  }
-}, Effect.scoped)
-```
-
-**When it runs:** Called by OpenCode when syncing project dependencies (e.g., after adding a server plugin that has npm dependencies).
-
-### 9.4 pluginSource() and resolvePluginTarget()
-
-**Purpose:** Classify a plugin spec as `"file"` or `"npm"` and resolve it to a directory path.
-
-**pluginSource:**
-
-```typescript
-// repos/opencode/packages/opencode/src/plugin/shared.ts:56-59
-export function pluginSource(spec: string): PluginSource {
-  if (isPathPluginSpec(spec)) return "file"
-  return "npm"
-}
-
-// repos/opencode/packages/opencode/src/plugin/shared.ts:170-172
-export function isPathPluginSpec(spec: string) {
-  return spec.startsWith("file://") || spec.startsWith(".") || isAbsolutePath(spec)
-}
-```
-
-**Classification:**
-
-| Spec                                  | pluginSource |
-|---------------------------------------|--------------|
-| `/absolute/path`                      | `"file"`     |
-| `./relative/path`                     | `"file"`     |
-| `file:///absolute/path`               | `"file"`     |
-| `opencode-forge`                      | `"npm"`      |
-| `@maggu2810/opencode-forge`           | `"npm"`      |
-| `github:maggu2810/opencode-forge`     | `"npm"`      |
-
-**resolvePluginTarget:**
-
-```typescript
-// repos/opencode/packages/opencode/src/plugin/shared.ts:207-213
-export async function resolvePluginTarget(spec: string) {
-  if (isPathPluginSpec(spec)) return resolvePathPluginTarget(spec)
-  
-  // For npm specs (including git):
-  const hit = parse(spec)
-  const pkg = hit?.name && hit.raw === hit.name ? `${hit.name}@latest` : spec
-  const result = await Npm.add(pkg)
-  return result.directory
-}
-```
-
-**Pkg transformation:**
-
-| Input spec                          | npa type | `hit.name`      | `hit.raw === hit.name` | `pkg` passed to Npm.add              |
-|-------------------------------------|----------|-----------------|------------------------|--------------------------------------|
-| `opencode-forge`                    | range    | `"opencode-forge"` | true                   | `"opencode-forge@latest"`            |
-| `opencode-forge@1.0.0`              | version  | `"opencode-forge"` | false                  | `"opencode-forge@1.0.0"`             |
-| `@maggu2810/opencode-forge`         | range    | `"@maggu2810/..."` | true                   | `"@maggu2810/opencode-forge@latest"` |
-| `github:maggu2810/opencode-forge`   | git      | `undefined`     | false                  | `"github:maggu2810/opencode-forge"`  |
-
-**Return value:** `result.directory` is `~/.cache/opencode/packages/<sanitized-spec>/`
-
-### 9.5 resolveEntryPoint() via import.meta.resolve
-
-**Purpose:** Find the actual `.js` file to `import()` for a package.
-
-```typescript
-// repos/opencode/packages/core/src/npm.ts:47-61
-const resolveEntryPoint = (name: string, dir: string): EntryPoint => {
-  let entrypoint: Option.Option<string>
-  try {
-    const resolved = typeof Bun !== "undefined"
-      ? import.meta.resolve(name, dir)   // Bun: resolve `name` starting from `dir`
-      : import.meta.resolve(dir)         // Node: resolve `dir` itself
-    entrypoint = Option.some(resolved)
-  } catch {
-    entrypoint = Option.none()
-  }
-  return {
-    directory: dir,
-    entrypoint,
-  }
-}
-```
-
-**Called with:**
-- `name`: package name (e.g., `"opencode-forge"`)
-- `dir`: path to `node_modules/opencode-forge`
-
-**Bun resolution:**
-1. Reads `node_modules/opencode-forge/package.json`
-2. Checks `exports` field for `"."` entry
-3. Falls back to `main` field
-4. Returns `file:///path/to/node_modules/opencode-forge/dist/index.js`
-
-**Example:**
-
-```typescript
-resolveEntryPoint("opencode-forge", "/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge")
-// Returns:
-// {
-//   directory: "/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge",
-//   entrypoint: Some("file:///home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/dist/index.js")
-// }
-```
+Plugin entry resolution (which file is loaded, `exports` handling, local directories)
+is not part of `Npm`; it lives in the plugin host. For the observable behavior, when
+developing or registering plugins, [read the plugin CLI guide](../plugins/oclitellmac/docs/opencode-plugin-cli.md).
 
 ### 9.6 TUI Plugin Loading — Bun Runtime Plugin Mechanism
 
-OpenCode's TUI plugin system relies on **Bun runtime plugins** to provide `@opentui/*` modules without installing them into plugin `node_modules/`.
+OpenCode's TUI provides `@opentui/*` and `solid-js` to plugins through **Bun runtime
+plugins**, so plugins do not install their own copies.
 
 #### 9.6.1 ensureRuntimePluginSupport — Virtual Module Registration
 
-```typescript
-// repos/opencode/packages/opencode/src/cli/cmd/tui/plugin/runtime.ts:1-2,43
-import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
-
-ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
-```
-
-**Source-verified implementation** (`@opentui/solid@0.2.6` `scripts/runtime-plugin-support-configure.ts`):
-
-```typescript
-// Line 1: import { plugin as registerBunPlugin } from "bun"
-// Lines 34-37: defaultRuntimeModules
-const defaultRuntimeModules: Record<string, RuntimeModuleEntry> = {
-  "@opentui/solid": solidRuntime as Record<string, unknown>,
-  "solid-js": solidJsRuntime as Record<string, unknown>,
-  "solid-js/store": solidJsStoreRuntime as Record<string, unknown>,
-}
-```
-
-**What this registers:**
-
-Using `import { plugin } from "bun"` (Bun **runtime** plugin API, not bundler-only), it registers virtual in-memory modules for:
-- `@opentui/core` (from `@opentui/core` runtime)
-- `@opentui/core/testing`
-- `@opentui/solid` *(from `defaultRuntimeModules`)*
-- `solid-js` *(from `defaultRuntimeModules`)*
-- `solid-js/store` *(from `defaultRuntimeModules`)*
-- `@opentui/keymap/*` (via `additional` parameter)
-
-**How it works** (`@opentui/core@0.2.6` `index-64dvh5m8.js:360-369`):
-
-```typescript
-// For each specifier (e.g., "@opentui/solid"):
-const moduleId = runtimeModuleIdForSpecifier(specifier)  // "opentui:runtime-module:%40opentui%2Fsolid"
-
-build.module(moduleId, async () => ({
-  exports: await resolveRuntimeModuleExports(moduleEntry),
-  loader: "object"
-}))
-
-build.onResolve({ filter: exactSpecifierFilter(specifier) }, () => ({ path: moduleId }))
-// exactSpecifierFilter = /^@opentui\/solid$/ (exact match, no path discrimination)
-```
-
-**Module resolution flow:**
-
-1. Plugin's `dist/tui.js` contains: `import { createComponent } from "@opentui/solid"`
-2. OpenCode does `await import(row.entry)` where `row.entry = file:///path/to/dist/tui.js`
-3. Bun encounters the `import "@opentui/solid"` statement
-4. Bun's runtime plugin's `onResolve` hook catches the specifier `"@opentui/solid"` (via regex `/^@opentui\/solid$/`)
-5. Returns `{ path: "opentui:runtime-module:%40opentui%2Fsolid" }`
-6. `build.module()` provides the virtual module contents from OpenCode's bundled copy
-
-**No filesystem lookup needed** — `@opentui/solid` is never physically installed in plugin `node_modules/`.
-
-#### 9.6.2 Known Issue: Colon in Path Breaks Plugin Loading (OpenCode Bug)
-
-**Symptom:**
-
-Plugins installed via `github:` specs fail to load with:
-
-```json
-{
-  "type": "ResolveMessage",
-  "message": "Cannot find module '@opentui/solid' from '/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/dist/tui.js'"
-}
-```
-
-Server plugins also fail:
-```json
-{
-  "message": "Cannot find module '@opencode-ai/sdk/v2' from '/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/dist/index.js'"
-}
-```
-
-The same failure occurs for **any plugin** whose full filesystem path (including ancestor directories) contains `:`, even when installed via local path specs.
-
-**Root cause (under investigation as of May 15, 2026):**
-
-The bug is **in OpenCode's plugin loading mechanism**, not in Bun itself.
-
-**What we know:**
-- Plugins at paths containing `:` fail to load in OpenCode (May 14, 2026 experiments)
-- **Bun compiled binaries handle `:` correctly** — comprehensive reproducer (`tests/bun-colon-repro/`) confirms that Bun `1.3.13` compiled binaries successfully:
-  - Dynamic import modules from colon paths ✅
-  - Resolve relative imports from colon paths ✅
-  - Resolve `node_modules` (bare specifiers) from colon paths ✅
-- The failure must occur in OpenCode's code, likely in:
-  - Path construction before `import()` call
-  - `pathToFileURL()` usage — may produce malformed URLs when path contains `:`
-  - `ensureRuntimePluginSupport` mechanism
-  - `resolvePluginEntrypoint()` or `resolvePackagePath()` functions
-
-See `../tests/bun-colon-repro/README.md` for full Bun reproducer details (all 12 tests passed).
-
-The working directory (CWD) of the opencode process is irrelevant — what matters is where the plugin files are located on disk.
-
-**Test subject:**
-- `/tmp/testplugin` = npm tarball content of `opencode-forge` v0.2.5 (published package)
-- Contains `dist/tui.js` with `"oc-plugin": ["server", "tui"]` in `package.json`
-- Scripts renamed to `Xbuild`, `Xprepare` (not lifecycle triggers)
-
-**Test isolation requirements:**
-- Run from a directory with **no `.opencode/` in any parent directory** (OpenCode walks up from CWD to git root AND reads `~/.config/opencode/`)
-- Clear `~/.cache/opencode/packages/` before each test
-- Clear `~/.local/share/opencode/log/*` for clean logs
-
-**Reproducer (executed May 14, 2026):**
-
-**Test 1-4: Colon in plugin directory name**
-
-```bash
-cd /tmp
-
-# Verify no .opencode in ancestors
-[[ ! -e /.opencode ]] && [[ ! -e /tmp/.opencode ]]
-# Output: all fine
-
-mkdir testenv
-cd testenv
-mkdir opencode-colon-fileproto
-mkdir opencode-underscore-fileproto
-mkdir opencode-colon-nofileproto
-mkdir opencode-underscore-nofileproto
-
-# Copy test plugin (identical content in all 4 dirs, only directory name differs)
-cp -ax /tmp/testplugin opencode-colon-fileproto/test:plugin
-cp -ax /tmp/testplugin opencode-underscore-fileproto/test_plugin
-cp -ax /tmp/testplugin opencode-colon-nofileproto/test:plugin
-cp -ax /tmp/testplugin opencode-underscore-nofileproto/test_plugin
-
-# Test 1: colon + file:// protocol
-(cd opencode-colon-fileproto; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin "file://${PWD}/test:plugin"; \
-  opencode)
-# Result: ❌ NO opencode-forge in sidebar
-
-# Test 2: underscore + file:// protocol
-(cd opencode-underscore-fileproto; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin "file://${PWD}/test_plugin"; \
-  opencode)
-# Result: ✅ opencode-forge in sidebar
-
-# Test 3: colon + no protocol (bare absolute path)
-(cd opencode-colon-nofileproto; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin "${PWD}/test:plugin"; \
-  opencode)
-# Result: ❌ NO opencode-forge in sidebar
-
-# Test 4: underscore + no protocol (bare absolute path)
-(cd opencode-underscore-nofileproto; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin "${PWD}/test_plugin"; \
-  opencode)
-# Result: ✅ opencode-forge in sidebar
-```
-
-**Test 5-6: Colon in ancestor directory (plugin name is clean)**
-
-These tests isolate whether the issue is the plugin's own directory name or the full path:
-
-```bash
-cd /tmp/testenv
-
-# Test 5: CWD with colon, plugin directory name has colon
-mkdir 'opencode:test'
-cp -ax /tmp/testplugin 'opencode:test'/test_plugin
-(cd 'opencode:test'; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin "${PWD}/test_plugin"; \
-  opencode)
-# Result: ❌ NO opencode-forge in sidebar
-# Full plugin path: /tmp/testenv/opencode:test/test_plugin (ancestor has colon)
-
-# Test 6: Clean CWD, plugin under ancestor directory with colon
-mkdir 'opencode-test-plugin-full-path'
-mkdir "plugin:space"
-cp -ax /tmp/testplugin "plugin:space"/testplugin
-(cd 'opencode-test-plugin-full-path'; \
-  rm -rf ~/.cache/opencode/packages/ "${PWD}"/.opencode/ ~/.local/share/opencode/log/*; \
-  opencode plugin /tmp/testenv/"plugin:space"/testplugin; \
-  opencode)
-# Result: ❌ NO opencode-forge in sidebar
-# Full plugin path: /tmp/testenv/plugin:space/testplugin (ancestor has colon)
-# CWD: /tmp/testenv/opencode-test-plugin-full-path (no colon)
-```
-
-**Key insight from Tests 5-6:** The failure occurs even when the plugin's own directory name is clean (`test_plugin`, `testplugin`), as long as **any ancestor directory** in the full path contains `:`. The CWD of the opencode process is irrelevant — only the plugin's installation path matters.
-
-**Config verification:**
-
-After install, `.opencode/tui.json` contained the expected plugin registration in all 4 test directories:
-
-```json
-// opencode-colon-fileproto/.opencode/tui.json
-{
-  "plugin": [
-    "file:///tmp/testenv/opencode-colon-fileproto/test:plugin"
-  ]
-}
-
-// opencode-underscore-fileproto/.opencode/tui.json
-{
-  "plugin": [
-    "file:///tmp/testenv/opencode-underscore-fileproto/test_plugin"
-  ]
-}
-
-// opencode-colon-nofileproto/.opencode/tui.json
-{
-  "plugin": [
-    "/tmp/testenv/opencode-colon-nofileproto/test:plugin"
-  ]
-}
-
-// opencode-underscore-nofileproto/.opencode/tui.json
-{
-  "plugin": [
-    "/tmp/testenv/opencode-underscore-nofileproto/test_plugin"
-  ]
-}
-```
-
-**Conclusion:** The plugin registration is correct in all test cases. The failure occurs during TUI plugin loading (dynamic `import()` of `dist/tui.js`) when the **plugin's full filesystem path** contains `:`.
-
-**Evidence summary:**
-
-| Plugin path spec | Path contains `:` | Sidebar loads? |
-|---|---|---|
-| `file:///tmp/testenv/.../test:plugin` | ✅ Yes (plugin dir name) | ❌ FAIL |
-| `file:///tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
-| `/tmp/testenv/.../test:plugin` | ✅ Yes (plugin dir name) | ❌ FAIL |
-| `/tmp/testenv/.../test_plugin` | ❌ No | ✅ SUCCESS |
-| CWD=`/tmp/testenv/opencode:test/`, plugin=`./test_plugin`<br/>Full path: `/tmp/testenv/opencode:test/test_plugin` | ✅ Yes (ancestor dir) | ❌ FAIL (OpenCode) |
-| CWD=`/tmp/testenv/opencode-test-plugin-full-path/` (clean),<br/>plugin=`/tmp/testenv/plugin:space/testplugin` | ✅ Yes (ancestor dir) | ❌ FAIL (OpenCode) |
-| Standalone Bun 1.3.13 + colon path (manual test) | ✅ Yes | ✅ SUCCESS |
-| Standalone Bun 1.3.13 compiled binary + colon path<br/>(reproducer: `tests/bun-colon-repro/`, all 12 tests) | ✅ Yes | ✅ SUCCESS |
-| OpenCode binary + colon in plugin path | ✅ Yes | ❌ FAIL |
-
-**Key finding:** Both `file://` protocol and bare absolute path forms fail equally when the plugin's full path contains `:`. The issue is **in OpenCode's plugin loading path**, not in Bun's module resolution. The CWD of the opencode process does not affect the outcome — only the plugin's installation path matters.
-
-**Bun reproducer results (May 15, 2026):**
-
-To isolate whether the bug was in Bun or OpenCode, a standalone reproducer was created at `tests/bun-colon-repro/`:
-
-```bash
-# Compiled a minimal binary that does: await import(process.argv[2])
-# Tested three scenarios:
-#   Step 1: Zero-dependency plugin
-#   Step 2: Plugin with relative imports
-#   Step 3: Plugin with node_modules dependencies
-
-cd tests/bun-colon-repro
-./run.sh
-```
-
-**All 12 tests passed**, including all colon path cases:
-
-| Step | Test Type | Compiled Binary + Colon Path | Standalone Bun + Colon Path |
-|------|-----------|------------------------------|----------------------------|
-| 1 | Dynamic import (no deps) | ✅ PASS | ✅ PASS |
-| 2 | Relative imports | ✅ PASS | ✅ PASS |
-| 3 | Node modules (bare specifiers) | ✅ PASS | ✅ PASS |
-
-**Conclusion:** Bun `1.3.13` compiled binaries handle `:` in filesystem paths correctly. The bug is definitively in OpenCode's code, not Bun. See `../tests/bun-colon-repro/README.md` for full reproducer details.
-
-**Why the `:` remains in the path (source-verified):**
-
-```typescript
-// repos/opencode/packages/core/src/npm.ts:40-45
-const illegal = process.platform === "win32" ? new Set(["<", ">", ":", '"', "|", "?", "*"]) : undefined
-
-export function sanitize(pkg: string) {
-  if (!illegal) return pkg  // On Linux: illegal = undefined, returns as-is
-  return Array.from(pkg, (char) => (illegal.has(char) || char.charCodeAt(0) < 32 ? "_" : char)).join("")
-}
-
-// Result: sanitize("github:maggu2810/...") → "github:maggu2810/..." on Linux
-```
-
-On Linux, `:` is a legal filesystem character, so `sanitize()` preserves it. The cache path literally becomes `~/.cache/opencode/packages/github:maggu2810/...`.
-
-**Why standalone Bun works and OpenCode doesn't:**
-
-- **Standalone Bun 1.3.13**: Module resolution for `file://` URLs with `:` in path works correctly — verified by standalone reproducer (12/12 tests passed)
-- **Bun compiled binary (standalone reproducer)**: All 12 tests passed including colon paths ✅
-- **OpenCode binary**: Fails to load plugins from colon paths ❌
-
-The difference is **not** in how Bun is compiled, but in **OpenCode's plugin loading code**. Likely causes:
-- `pathToFileURL()` may produce malformed URLs when path contains `:`
-- Path normalization in `resolvePluginEntrypoint()` may strip or mangle `:`
-- The `ensureRuntimePluginSupport` mechanism may fail for certain path formats
-
-**Scope of the issue:**
-
-- **All** external imports from files in paths containing `:` fail (not just `@opentui/solid`)
-- Affects both server (`@opencode-ai/sdk`) and TUI (`@opentui/solid`) plugins
-- Affects **any plugin** whose full installation path (including all ancestor directories) contains `:`
-  - `github:` specs: cache path `~/.cache/opencode/packages/github:user/repo/` always has `:`
-  - Local path specs: only if the full path to the plugin contains `:` anywhere
-- Does **not** affect npm registry specs (`opencode-forge@1.0.0`) — no `:` in cache path
-
-**Workaround status:**
-
-**Short-term workaround available:** OpenCode could sanitize cache paths on Linux (strip `:` from `github:` specs) similar to how Windows does. This would fix `github:` specs but not user-supplied local paths with `:`.
-
-**Current alternatives:**
-1. **Use npm registry specs** — `opencode plugin opencode-forge` (no `:` in cache path)
-2. **Use local path specs** — only if the **full installation path** contains no `:` in any directory name (e.g., `/home/user/plugins/my-plugin` works, but `/home/user/project:name/plugin` or `/home/user/plugins/test:plugin` both fail)
-3. **On Windows** — `sanitize()` strips `:` automatically, so `github:` specs work (cache path becomes `github_user_repo`)
-
-**Impact on git-hosted plugins:**
-- `github:user/repo` specs are broken on Linux due to `:` in cache path
-- **Fix needed in OpenCode**: Either sanitize cache paths on Linux (like Windows does) or fix the path handling bug in plugin loading
-- Workaround for users: publish to npm registry and install via `opencode plugin <package-name>`
-- Alternative: install from local filesystem with no `:` in path, then manage updates manually
+`packages/tui/src/plugin/runtime-plugin-support.bun.ts` calls `ensureRuntimePluginSupport()`
+from `@opentui/solid/runtime-plugin-support/configure`, with `@opencode/plugin/tui`
+(`Plugin`, `PluginContextProvider`, `usePlugin`) passed as an `additional` module. Bare
+imports of the registered modules inside plugin code are redirected to the copies bundled
+in the OpenCode binary instead of being looked up in the plugin's `node_modules/`.
+Details of which modules are registered come from `@opentui/solid`
+(`scripts/runtime-plugin-support-configure.ts`, `defaultRuntimeModules`, verified for
+`@opentui/solid@0.2.6` in V1-era notes; not re-verified for the version used by V2).
+
+#### 9.6.2 Known Issue: Colon in Path Breaks Plugin Loading (V1 observation)
+
+In OpenCode v1, plugins installed via `github:` specs lived under a cache path containing
+`:` (`~/.cache/opencode/packages/github:user/repo/`), and plugins whose full filesystem
+path contained `:` failed to load (`Cannot find module '@opentui/solid'`). Standalone Bun
+handled such paths correctly, so the cause was in OpenCode's loading code.
+
+In V2 the git cache key no longer contains `:` (see 9.1), so the `github:` cache-path
+trigger does not apply. Whether a `:` in a local plugin directory path still breaks
+loading in V2 has **not been verified**; avoid `:` in local plugin paths until confirmed.
 
 ---
 
 ## 10. Spec Type Reference Table
 
-| Spec                                | npa type   | `name` field       | `pkg` → Npm.add               | Cache dir (Linux)                                       | arborist behavior                                        | `prepare` runs? | `dist/` available?                          | OpenCode result                          |
-|-------------------------------------|------------|--------------------|-------------------------------|---------------------------------------------------------|----------------------------------------------------------|-----------------|---------------------------------------------|------------------------------------------|
-| `opencode-forge`                    | `range`    | `"opencode-forge"` | `"opencode-forge@latest"`     | `~/.cache/opencode/packages/opencode-forge@latest/`     | Fetches latest from npm registry                         | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `opencode-forge@1.0.0`              | `version`  | `"opencode-forge"` | `"opencode-forge@1.0.0"`      | `~/.cache/opencode/packages/opencode-forge@1.0.0/`      | Fetches v1.0.0 from npm registry                         | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `@maggu2810/opencode-forge`         | `range`    | `"@maggu2810/..."` | `"@maggu2810/...@latest"`     | `~/.cache/opencode/packages/@maggu2810/opencode-forge@latest/` | Fetches latest from npm registry (scoped)        | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `github:maggu2810/opencode-forge`   | `git`      | `undefined`        | `"github:maggu2810/..."`      | `~/.cache/opencode/packages/github:maggu2810/opencode-forge/` | Clones git repo, npm subprocess                  | **Yes²**        | Only if committed OR built by subprocess    | **Linux: fails⁵. Windows: works** |
-| `maggu2810/opencode-forge`          | `git`      | `undefined`        | `"maggu2810/opencode-forge"`  | `~/.cache/opencode/packages/maggu2810/opencode-forge/`  | Same as `github:` (implicit GitHub)                      | **Yes²**        | Only if committed OR built by subprocess    | Same as `github:`                        |
-| `npm:opencode-forge`                | `alias`    | `undefined`³       | `"npm:opencode-forge"`        | `~/.cache/opencode/packages/npm:opencode-forge/`        | Resolves alias to npm registry, fetches                  | No¹             | Yes (from published tarball)                | Installs to cache, resolves entry        |
-| `/absolute/path`                    | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
-| `./relative/path`                   | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
-| `file:///absolute/path`             | `directory`| `undefined`        | N/A⁴                          | N/A (not cached)                                        | N/A (direct path, no arborist)                           | N/A             | Depends on local filesystem                 | Resolves directly, no install            |
+Cache dirs are relative to `~/.cache/opencode/npm/` (Linux); see 9.1.
+
+| Spec | npa type | `name` field | Cache key | arborist behavior | `prepare` runs? | `dist/` available? |
+|---|---|---|---|---|---|---|
+| `opencode-forge` | `range` | `"opencode-forge"` | `opencode-forge@latest` | Fetches latest from npm registry | No¹ | Yes (published tarball) |
+| `opencode-forge@1.0.0` | `version` | `"opencode-forge"` | `opencode-forge@1.0.0` | Fetches v1.0.0 from npm registry | No¹ | Yes (published tarball) |
+| `@maggu2810/opencode-forge` | `range` | `"@maggu2810/opencode-forge"` | `@maggu2810/opencode-forge@latest` | Fetches latest (scoped) | No¹ | Yes (published tarball) |
+| `github:maggu2810/opencode-forge` | `git` | `undefined` | `git-opencode-forge-<hash>` | Clones git repo, npm subprocess | **Yes²** | Only if committed OR built by subprocess |
+| `maggu2810/opencode-forge` | `git` | `undefined` | `git-opencode-forge-<hash>` | Same as `github:` | **Yes²** | Only if committed OR built by subprocess |
+| `npm:opencode-forge` | `alias` | `undefined` | Not installable by `Npm` (rejected: only `version`/`range`/`tag`/`git`) | — | — | — |
+| `/absolute/path`, `./relative/path`, `file://...` | `directory` | `undefined` | Not cached | No arborist install | N/A | Depends on local filesystem |
 
 **Footnotes:**
 
@@ -1558,11 +974,7 @@ The difference is **not** in how Bun is compiled, but in **OpenCode's plugin loa
 
 ² **Git specs are the exception:** OpenCode uses `ignoreScripts: true`, but pacote's `GitFetcher` spawns an npm subprocess **without** `--ignore-scripts`. If the package has `prepare`, `build`, or other lifecycle scripts, the subprocess runs `npm install` which executes `prepare` as part of the standard lifecycle. See Section 3.3.1 and Section 5.3 for details.
 
-³ For `alias` type, `npa().name` is `undefined`, but `subSpec.name` contains the actual package name. OpenCode doesn't extract `subSpec`, so falls back to full spec string.
-
-⁴ Path specs bypass `Npm.add()` entirely — they go through `resolvePathPluginTarget()` which directly returns the path as a `file://` URL.
-
-⁵ **TUI and server plugins from git specs fail on Linux:** The `:` character in cache paths (`github:maggu2810`) breaks plugin loading in OpenCode (not in Bun itself — Bun handles `:` correctly per `tests/bun-colon-repro/` reproducer). Root cause: OpenCode bug in plugin loading mechanism — likely in `pathToFileURL()`, path normalization, or `ensureRuntimePluginSupport`. The cache path `~/.cache/opencode/packages/github:user/repo/` always contains `:`. Fix needed in OpenCode to sanitize cache paths on Linux (like Windows already does via `sanitize()`). Workaround for users: use npm registry specs (no `:` in cache path), or local paths where the **entire installation path** (plugin directory + all ancestors) contains no `:`. See Section 9.6.2 for experiment details and `../tests/bun-colon-repro/README.md` for Bun reproducer proving Bun is not the cause. **Windows is unaffected** — `sanitize()` strips `:` automatically.
+For which specs `opencode plugin add` accepts and how local paths are handled, when registering plugins, [read the plugin CLI guide](../plugins/oclitellmac/docs/opencode-plugin-cli.md).
 
 ---
 
@@ -1685,19 +1097,14 @@ npm config get ignore-scripts  # Should show: true
 ### 11.8 Inspect OpenCode Plugin Cache
 
 ```bash
-# List all cached plugins
-ls ~/.cache/opencode/packages/
+# List all cached packages (one directory per cache key)
+ls ~/.cache/opencode/npm/
 
-# Inspect specific plugin cache
-ls -la ~/.cache/opencode/packages/github:maggu2810/opencode-forge/
-ls -la ~/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/
+# Inspect a cache key: numbered generation directories
+ls -la ~/.cache/opencode/npm/opencode-forge@latest/
 
-# Check package.json in cache
-cat ~/.cache/opencode/packages/github:maggu2810/opencode-forge/package.json
-
-# Check installed package
-ls ~/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/
-cat ~/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge/package.json
+# Inspect an installed package in the newest generation
+ls ~/.cache/opencode/npm/opencode-forge@latest/<generation>/node_modules/opencode-forge/
 ```
 
 ### 11.9 Test Module Resolution (Bun)
@@ -1705,7 +1112,7 @@ cat ~/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/open
 ```bash
 # Test if a module resolves from a given directory
 bun -e "
-const fromDir = '/home/user/.cache/opencode/packages/github:maggu2810/opencode-forge/node_modules/opencode-forge';
+const fromDir = '/home/user/.cache/opencode/npm/opencode-forge@latest/<generation>/node_modules/opencode-forge';
 try {
   const resolved = import.meta.resolve('@opentui/solid', fromDir);
   console.log('resolved:', resolved);
@@ -1717,11 +1124,11 @@ try {
 # Walk up directory tree to find where resolution succeeds
 bun -e "
 const paths = [
-  '/home/user/.cache/opencode/packages/github:user/plugin/node_modules/@user/plugin/dist',
-  '/home/user/.cache/opencode/packages/github:user/plugin/node_modules/@user/plugin',
-  '/home/user/.cache/opencode/packages/github:user/plugin/node_modules',
-  '/home/user/.cache/opencode/packages/github:user/plugin',
-  '/home/user/.cache/opencode/packages',
+  '/home/user/.cache/opencode/npm/git-plugin-0123456789ab/<generation>/node_modules/@user/plugin/dist',
+  '/home/user/.cache/opencode/npm/git-plugin-0123456789ab/<generation>/node_modules/@user/plugin',
+  '/home/user/.cache/opencode/npm/git-plugin-0123456789ab/<generation>/node_modules',
+  '/home/user/.cache/opencode/npm/git-plugin-0123456789ab/<generation>',
+  '/home/user/.cache/opencode/npm',
 ];
 for (const p of paths) {
   try {
@@ -1814,20 +1221,10 @@ ls -la git-clone/dist/ 2>&1 | head -10
 
 **OpenCode source files (repos/opencode/):**
 
-- `packages/core/src/global.ts:10-24` — XDG cache path derivation, `Path.cache` definition
-- `packages/core/src/npm.ts:42-46` — `sanitize()` function (Windows path sanitization)
-- `packages/core/src/npm.ts:47-61` — `resolveEntryPoint()` using `import.meta.resolve`
-- `packages/core/src/npm.ts:77` — `directory(pkg)` cache path computation
-- `packages/core/src/npm.ts:78-106` — `reify()` arborist wrapper with `ignoreScripts: true`
-- `packages/core/src/npm.ts:113-136` — `Npm.add()` plugin install flow
-- `packages/core/src/npm.ts:138-189` — `Npm.install()` project dependency sync
-- `packages/core/src/npm-config.ts` — `@npmcli/config` loading and registry resolution
-- `packages/opencode/src/plugin/shared.ts:56-59` — `pluginSource()` classification
-- `packages/opencode/src/plugin/shared.ts:170-172` — `isPathPluginSpec()` check
-- `packages/opencode/src/plugin/shared.ts:207-213` — `resolvePluginTarget()` entry point
-- `packages/opencode/src/plugin/shared.ts:103-113` — `resolvePackageEntrypoint()` using `exports` field
-- `packages/opencode/src/plugin/loader.ts:119-128` — `load()` dynamic import of plugin module
-- `packages/opencode/src/cli/cmd/tui/plugin/runtime.ts:1-2,43` — `ensureRuntimePluginSupport()` call
+- `packages/util/src/npm.ts` — `Npm` service: cache key/directory, `reify()` arborist wrapper with `ignoreScripts: true`, `add`/`resolve`/`check`/`update`/`which`
+- `packages/util/src/npm-config.ts` — `@npmcli/config` loading and registry resolution
+- `packages/tui/src/plugin/runtime-plugin-support.bun.ts` — `ensureRuntimePluginSupport()` call
+- `packages/cli/src/commands/handlers/plugin/` — `opencode plugin` subcommand handlers
 
 **Documentation links:**
 
@@ -1919,7 +1316,7 @@ bun -e "import npa from 'npm-package-arg'; console.log(npa('github:user/repo'))"
 npm install --ignore-scripts <package>
 
 # Inspect cache
-ls ~/.cache/opencode/packages/
+ls ~/.cache/opencode/npm/
 
 # Test resolution
 bun -e "try { console.log(import.meta.resolve('@opentui/solid', '/path')) } catch(e) { console.log('failed') }"

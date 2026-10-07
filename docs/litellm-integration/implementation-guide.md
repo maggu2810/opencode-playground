@@ -436,7 +436,7 @@ jq '.models.gpt-4' ~/.local/state/oclitellmac/providers/PROVIDER_KEY.json
 
 **Reason**: Different output targets
 - Python: JSONC string (file output)
-- TypeScript: Runtime object mutation (config hook)
+- TypeScript: Runtime registration via the V2 plugin API
 
 ### Why use `Map` in TypeScript but `dict` in Python?
 

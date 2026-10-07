@@ -3,7 +3,7 @@
 ## Documentation
 
 - [Package Management](docs/package-management.md) — npm, arborist, pacote, and
-  Bun module resolution, and how OpenCode installs plugins
+  Bun module resolution, and OpenCode plugin installation notes
 - [LiteLLM Integration Field Coverage Comparison](docs/litellm-integration/field-coverage-comparison.md) —
   field coverage across the 4 LiteLLM integration implementations
 - [LiteLLM Integration Shared Pipeline Architecture](docs/litellm-integration/shared-pipeline-architecture.md) —
@@ -13,6 +13,8 @@
 - [LiteLLM Integration Source Map](docs/litellm-integration/source-map.md) —
   single source of truth for the exact commit/tag of every third-party repo
   referenced by the LiteLLM integration docs
+- [Open Issues](docs/open-issues.md) — known problems and decisions still
+  to make (config-generator under OpenCode v2, submodule pins)
 
 ## opencode on Termux on Android
 
@@ -24,142 +26,72 @@ https://github.com/Hope2333/opencode-termux/
 
 ### Distribution options
 
-There are three ways to distribute an OpenCode plugin:
+There are two ways to distribute an OpenCode v2 plugin:
 
-**1. File path (this repo)**
-The user clones the repository and registers the plugin by local path. Requires
-manual dependency installation (see below). Best for development and internal use.
+**1. npm registry or Git specifier**
+Publish the plugin as an npm package (public or private registry) or host it in a
+Git repository. Users add it with `opencode plugin add <package>`. Entries are
+resolved from the package's `package.json` `exports`.
 
-**2. npm registry**
-Publish the plugin as an npm package to [npmjs.com](https://npmjs.com) (public)
-or a private registry. OpenCode fetches and installs it automatically — no cloning,
-no manual `npm install` needed:
-```
-opencode plugin my-plugin-name
-```
+**2. Local directory (development and internal use)**
+Register an absolute directory path in the global server config. The directory
+must contain entry files (`server.*` or `index.*`, and/or `tui.*`); V2 does not
+consult `exports` for local directories, so `oclitellmac` registers its built
+`dist/` directory. `opencode plugin add` rejects local paths, so this is done by
+editing the config.
 
-**3. GitHub / git URL**
-OpenCode passes the spec directly to `@npmcli/arborist`, which handles git URLs the
-same way `npm install` does — no cloning or manual install required. Several forms work:
+When using `opencode plugin` commands, registration, config files, or spec formats, [read the plugin CLI guide](plugins/oclitellmac/docs/opencode-plugin-cli.md)
 
-```sh
-# GitHub shorthand (package.json in repo root)
-opencode plugin github:your-org/your-repo
-
-# Full git URL
-opencode plugin git+https://github.com/your-org/your-repo.git
-
-# Bare GitHub shorthand
-opencode plugin your-org/your-repo
-
-# package.json in a subdirectory (e.g. a monorepo)
-opencode plugin "github:your-org/your-repo#path:packages/my-plugin"
-
-# Specific branch or commit + subdirectory
-opencode plugin "git+https://github.com/your-org/your-repo.git#main::path:packages/my-plugin"
-
-# Semver tag + subdirectory
-opencode plugin "git+https://github.com/your-org/your-repo.git#semver:^1.0.0::path:packages/my-plugin"
-
-# Global config
-opencode plugin github:your-org/your-repo --global
-```
-
-> **Note:** Git URL plugins bypass OpenCode's install cache — arborist re-runs on every
-> OpenCode startup, which is slightly slower than an npm-published package.
+When looking for Git-URL specifier forms or install-cache behavior, [read the package management notes](docs/package-management.md)
 
 ---
 
 ### Plugin User — Getting Started
 
-Clone the repository and enter the plugin directory:
+For `oclitellmac`, [read here](plugins/oclitellmac/AGENTS.md) and follow the install
+instructions in its docs.
 
-```sh
-git clone https://github.com/de23a4/genai
-cd genai/repos/opencode-playground/plugins/tui-playground-v1
-```
-
-Install dependencies (required — OpenCode does **not** install them automatically
-for file-path plugins):
-
-```sh
-# using npm
-npm install
-
-# or using bun (faster)
-bun install
-```
-
-Register the plugin with OpenCode. Pass the path to the plugin directory — several
-forms are accepted:
-
-```sh
-# absolute path, project-local config
-opencode plugin /home/alice/repos/opencode-playground/plugins/tui-playground-v1
-
-# absolute path, global config (available in all projects)
-opencode plugin /home/alice/repos/opencode-playground/plugins/tui-playground-v1 --global
-
-# relative path (resolved from current directory)
-opencode plugin ./plugins/tui-playground-v1
-
-# file:// URI
-opencode plugin file:///home/alice/repos/opencode-playground/plugins/tui-playground-v1
-```
-
-OpenCode writes the path into `opencode.jsonc` (local) or
-`~/.config/opencode/opencode.jsonc` (global) and loads the plugin at startup.
-No further steps needed.
+`plugins/tui-playground-v1` is a V1 teaching example. Its source-only layout cannot
+be added by path in V2; see the V1 notes below.
 
 ---
 
 ### Plugin Developer — Setup
 
-Follow the Plugin User steps above first, then:
-
-- Edit `src/index.tsx` — no pre-build step is needed. OpenCode imports TypeScript
-  and TSX directly via Bun at load time (`await import(entry)`), no compilation step.
+- Edit sources under `plugins/<name>/src/` and rebuild if the plugin has a build step.
 - Restart OpenCode to reload the plugin after changes.
 - OpenCode source (plugin APIs, TUI interfaces, SDK types) is in the submodule at
-  `repos/opencode/` — use it as the reference for available hooks and types.
+  `repos/opencode/` — it is the reference for V2 behavior.
 - The `plugins/` directory is the working area for all plugin experiments.
 
 ---
 
-### Writing a TUI plugin — required `package.json` structure
+### Writing a V2 TUI plugin — `package.json` structure
 
-OpenCode determines the plugin type (server, TUI, or both) by inspecting the
-`exports` map in `package.json`, **not** the `main` field alone.
+A V2 plugin module default-exports `{ id, setup(ctx) }`. For a TUI plugin the type is
+`Plugin.Definition` from `@opencode/plugin/tui`; `setup` may return a cleanup
+function. V1 shapes (`{ id, tui }`, `async function(input)`) are rejected.
 
-| Target | Detection mechanism | Config file written |
-|---|---|---|
-| Server plugin | `exports["./server"]` present, **or** `main` / `exports["."]` with a `server()` export | `opencode.jsonc` |
-| TUI plugin | `exports["./tui"]` present | `tui.json` |
+For npm/Git packages, entries are resolved from `exports`: `./server` (falling back
+to `.`), `./tui`, `./rpc`. A TUI plugin package therefore still needs `exports["./tui"]`.
+A server plugin that has a TUI entry is loaded in the TUI automatically; only
+TUI-only plugins need a `plugins` entry in `~/.config/opencode/cli.json`
+(`tui.json`/`tui.jsonc` are not read in V2).
 
-**A plugin without `exports["./tui"]` will never be registered as a TUI plugin**,
-even if its default export contains a `tui` function. The installer detects
-"server target" only and adds it to `opencode.jsonc` — the TUI loader never sees it.
-
-Minimum `package.json` for a TUI plugin:
+Minimum `exports` for a TUI plugin package:
 
 ```json
 {
   "name": "my-tui-plugin",
   "version": "1.0.0",
   "type": "module",
-  "main": "./src/index.tsx",
   "exports": {
     "./tui": {
       "import": "./src/index.tsx"
     }
   },
-  "dependencies": {
-    "@opencode-ai/plugin": "*",
-    "@opencode-ai/sdk": "*"
-  },
   "peerDependencies": {
     "@opentui/core": "*",
-    "@opentui/keymap": "*",
     "@opentui/solid": "*",
     "solid-js": "*"
   }
@@ -167,21 +99,26 @@ Minimum `package.json` for a TUI plugin:
 ```
 
 Key points:
-- **`exports["./tui"].import`** — points to the plugin entrypoint; required for TUI detection
 - **`@opentui/*` and `solid-js` in `peerDependencies`, not `dependencies`** — OpenCode
-  provides these at runtime (they are embedded in the OpenCode binary). Installing
-  your own copies causes JSX transform failures because the Solid/Babel transform
-  registered by OpenCode at startup does not cover a second copy in the plugin's
-  own `node_modules/`
-- **`@opencode-ai/plugin` and `@opencode-ai/sdk` in `dependencies`** — these are
-  type-only imports; they are not provided by OpenCode's runtime and must be installed
-  in the plugin's own `node_modules/`
-- **Source file must use `.tsx` extension** (not `.ts`) for files containing JSX —
-  TypeScript does not parse JSX syntax in `.ts` files regardless of `jsxImportSource`
+  provides these at runtime (embedded in the binary). Installing your own copies
+  causes JSX transform failures because the Solid transform registered by OpenCode
+  does not cover a second copy in the plugin's own `node_modules/`
+- **Source file must use `.tsx` extension** (not `.ts`) for files containing JSX
+- **Local directory plugins** are resolved by entry files (`<dir>/tui`, `<dir>/server`,
+  `<dir>/index`), not `exports`
 
-Additional type correctness notes (confirmed against OpenCode source):
-- Import TUI types from `@opencode-ai/plugin/tui`, not `@opencode-ai/plugin`
-- `api.slots.register()` returns a `string` ID, not a dispose function — no need
-  to pass it to `api.lifecycle.onDispose()`
-- `TuiSlotPlugin` has no `id` field — omit it from the `register()` call
-- Valid `borderStyle` values include `"rounded"`, not `"round"`
+Additional type notes (V2):
+- Import types from `@opencode/plugin/tui` (namespace `Plugin`)
+- Register UI with `ctx.ui.slot({ <prepend|append|before|after|replace>: "<slot path>", render })`
+  (e.g. `sidebar.content`, `sidebar.footer`); there is no numeric `order`
+- Theme comes from `ctx.theme` (tokens like `text.base`, `text.muted`, `border.base`)
+- Cleanup is the function returned from `setup`
+
+---
+
+### Notes on the V1 example `tui-playground-v1`
+
+`plugins/tui-playground-v1` is an intentionally V1 plugin kept as a teaching
+artifact (V1 API: `api.slots.register`, `api.lifecycle.onDispose`, `tui.json`,
+`opencode plugin <path>`). None of its install or API guidance applies to V2; use the
+V2 sections above for new work. Do not edit its code.
