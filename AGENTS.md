@@ -10,7 +10,7 @@ Its instructions are binding — follow them as if they were written in this fil
 
 ## Critical Constants
 
-- opencode repo: `repos/opencode/` (git submodule, v2.0.24; source of truth for V2 behavior)
+- opencode repo: `repos/opencode/` (git submodule, v2.1.4; source of truth for V2 behavior)
 - plugins dir: `plugins/`
 - Plugin module: default export `{ id, setup(ctx) }` (V2); entry files/resolution and installation: when working with plugin registration, [read here](plugins/oclitellmac/docs/opencode-plugin-cli.md)
 - `plugins/tui-playground-v1` is an intentionally V1 example; do not edit its code

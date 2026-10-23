@@ -53,22 +53,36 @@ submodule bump.
 
 ## `oclitellmac` v2 port (`repos/opencode`)
 
-The v2 server and TUI plugins were ported against `repos/opencode` at
+The v2 server and TUI plugins are verified against `repos/opencode` at
+[`68bc26b7`](https://github.com/anomalyco/opencode/commit/68bc26b7da1990ce10ffecfbc1e09eb13aa5d824)
+(`v2.1.4`, 2026-10-23). They were first ported against
 [`e7a34f09`](https://github.com/anomalyco/opencode/commit/e7a34f09bfd9134dfade5a8ddb843f7030bc9a69)
 (`v2.0.24`, 2026-10-06). The v1 table above still pins what the field-mapping
 docs and `config-generator` were verified against.
 
-Files inspected:
+Files inspected (all re-checked at `v2.1.4`):
 
 - `packages/core/src/plugin/module.ts` — server plugin module shape (`{ id, setup }`).
 - `packages/plugin/src/promise/` — Promise plugin API (`ctx.provider.transform`, `ctx.session.hook`).
 - `packages/tui/src/plugin/context.tsx` and `packages/plugin/src/tui/` — TUI plugin shape and context (`ctx.ui.slot`, `ctx.theme`).
-- `packages/schema/src/provider.ts` and `packages/schema/src/model.ts` — `Provider.Info` / `Model.Info`.
-- `packages/core/src/model.ts` and `packages/core/src/model-resolver.ts` — package resolution (`model.package ?? provider.package`), settings merge, timeouts.
-- `packages/ai/src/providers/openai-compatible.ts` and `anthropic-compatible.ts` — native provider packages and their settings.
-- `packages/ai/src/cache-policy.ts` — prompt-cache breakpoints are only placed on Anthropic-style routes.
+- `packages/schema/src/provider.ts`, `packages/schema/src/model.ts` and `packages/schema/src/model-compatibility.ts` — `Provider.Info` / `Model.Info`, compatibility fields (`cacheFormat`, `supportsPromptCacheKey`).
+- `packages/core/src/model.ts` and `packages/core/src/model-resolver.ts` — package resolution (`model.package ?? provider.package`), settings merge (provider compatibility, then model compatibility), timeouts, request encoding.
+- `packages/core/src/provider.ts` — bundled provider packages (`builtins`), timeout defaults.
+- `packages/ai/src/providers/openai-compatible.ts`, `anthropic.ts` and `anthropic-compatible.ts` — native provider packages and their settings.
+- `packages/ai/src/cache-policy.ts` and `packages/ai/src/protocols/openai-chat.ts` — prompt-cache breakpoints: Anthropic-style routes by default, any route whose model declares `compatibility.cacheFormat`.
+- `packages/plugin/src/runtime.ts` — plugin runtime guard (plugins must use the host's `effect` and `@opencode/plugin`).
 - `packages/ai/src/protocols/anthropic-messages.ts` and `packages/core/src/variant.ts` — Anthropic request shape, thinking and effort variants.
 - `packages/cli/src/config/` — `cli.json` (replaces `tui.json`) and service config.
+
+### Changes from `v2.0.24` to `v2.1.4` relevant to `oclitellmac`
+
+- `Provider.Info.compatibility` is inherited by every model; model compatibility overrides individual fields. `oclitellmac` sets `supportsPromptCacheKey` there.
+- `compatibility.cacheFormat` (`anthropic`, `alibaba`) makes the OpenAI chat builder emit `cache_control`. `oclitellmac` exposes it as `cacheBreakpointModels`.
+- Provider setting `encoding` (`zstd`, `gzip`, `none`) compresses JSON request bodies. `oclitellmac` passes it through `providerOptions.encoding`.
+- Default `chunkTimeout` raised from 5 to 15 minutes.
+- `@opencode/ai/providers/anthropic-compatible` is now bundled. `oclitellmac` keeps using `anthropic`.
+- `@opencode/plugin` 2.1.4 requires `@opentui/*` >= 0.6.8 as peers.
+- MCP tool results with media types the model cannot receive inline are converted to text or saved to a file instead of breaking the session (fix for upstream issue #54798, released in `v2.1.3`).
 
 ## Notable upstream changes since the previous source pin
 
